@@ -117,25 +117,27 @@ io.on('connection', (socket) => {
     });
 });
 
-app.use('/pdf', pdfRoutes);
-app.use('/roles', UserRoutes);
-app.use('/csv', csvRoutes);
-app.use('/api', EventRoutes);
-app.use('/teams', Teams);
-app.use('/teamformation', teamdata);
-app.use("/mentor", teammentor);
-app.use('/contact', Contact);
-app.use('/profile', Profile);
-app.use('/notifications', notificationRoutes);
-app.use('/projects', Project);
-app.use('/items', itemRoutes);
-app.use('/notes', notesRoutes);
-app.use('/videos', videoRoutes);
-app.use("/api/exams", examsRoute);
-app.use("/api/reports", resportsRoute);
-app.use('/chat', chatroutes);
-app.use('/api', taskRoutes);
+// Import and use your route handlers
+app.use('/pdf', require('../routes/certificates'));
+app.use('/roles', require('../routes/roles'));
+app.use('/csv', require('../routes/studentcsv'));
+app.use('/api', require('../routes/eventRoutes'));
+app.use('/teams', require('../routes/teams'));
+app.use('/teamformation', require('../routes/teamformation'));
+app.use("/mentor", require('../routes/mentor-assign'));
+app.use('/contact', require('../routes/contactus'));
+app.use('/profile', require('../routes/profile'));
+app.use('/notifications', require('../routes/notification'));
+app.use('/projects', require('../routes/projects'));
+app.use('/items', require('../routes/item'));
+app.use('/notes', require('../routes/notes'));
+app.use('/videos', require('../routes/video'));
+app.use("/api/exams", require('../routes/examsRoute'));
+app.use("/api/reports", require('../routes/reportsRoute'));
+app.use('/chat', require('../routes/chat'));
+app.use('/api', require('../routes/taskRoutes'));
 
+module.exports = app;
 const PORT = process.env.PORT;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
