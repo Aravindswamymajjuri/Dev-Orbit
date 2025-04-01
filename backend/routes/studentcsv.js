@@ -1,9 +1,9 @@
-// studentcsv.js - Router file
 const express = require('express');
 const multer = require('multer');
 const csv = require('csv-parser');
 const xlsx = require('xlsx');
-const processStudents = require('../middleware/processcsv');
+const { Readable } = require('stream');
+const processStudents = require('../middleware/processcsv'); // Import the processStudents middleware
 
 const router = express.Router();
 
@@ -20,14 +20,11 @@ router.post('/register-students', upload.single('file'), async (req, res) => {
 
   try {
     if (req.file.mimetype === 'text/csv') {
-      // For CSV files, create a readable stream from the buffer
-      const { Readable } = require('stream');
-      const readableStream = new Readable();
-      readableStream.push(req.file.buffer);
-      readableStream.push(null);
-
+      // Create a readable stream from the buffer in memory
+      const stream = Readable.from(req.file.buffer);
+      
       await new Promise((resolve, reject) => {
-        readableStream
+        stream
           .pipe(csv())
           .on('data', (row) => {
             students.push(row);
@@ -36,7 +33,7 @@ router.post('/register-students', upload.single('file'), async (req, res) => {
           .on('error', reject);
       });
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-      // For Excel files, read directly from the buffer
+      // Process Excel file directly from buffer
       const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
@@ -56,9 +53,9 @@ router.post('/register-students', upload.single('file'), async (req, res) => {
     });
   } catch (error) {
     console.error('Error processing file:', error);
-    res.status(500).json({ error: 'Error processing file', details: error.message });
+    res.status(500).json({ error: 'Error processing file' });
   }
-  // No need to unlink files since we're using memory storage
+  // No need to clean up file as it's stored in memory
 });
 
 module.exports = router;
