@@ -1,4 +1,3 @@
-
 const express = require('express');
 const router = express.Router();
 const { Student } = require('../models/roles');
@@ -67,6 +66,12 @@ router.post('/accept-request', authenticateToken, async (req, res) => {
         const request = await TeamRequest.findById(requestId).populate('sender', 'name email rollNo college');
 
         if (!request) return res.status(404).json({ error: 'Request not found' });
+        
+        // Check if recipient is already in a team
+        const recipientInTeam = await Team.findOne({ students: request.recipient });
+        if (recipientInTeam) {
+            return res.status(400).json({ error: 'Cannot accept request. Recipient is already in a team.' });
+        }
 
         let team;
 
@@ -76,9 +81,7 @@ router.post('/accept-request', authenticateToken, async (req, res) => {
             team = new Team({
                 students: [request.sender._id], // Start with the sender as the first member
                 mentor: null
-
             });
-            console.log(mentor)
 
             await team.save();
             request.teamId = team._id;
@@ -471,7 +474,7 @@ router.delete('/delete-requests', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-deleteAcceptedRejectedRequests();
+
 
  
 // Reject join request (Team Lead only)
@@ -578,4 +581,45 @@ router.get('/received-requests', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch received requests' });
     }
 });
+
+
+// Add this endpoint to your backend router
+router.get('/sent-join-requests', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        
+        // Find all join requests sent by the current user with pending status
+        const requests = await TeamRequest.find({
+            sender: userId,
+            status: 'pending'
+        })
+        .populate('recipient', 'name email')
+        .populate('teamId', 'name description')
+        .sort({ createdAt: -1 });
+
+        res.json(requests);
+    } catch (error) {
+        console.error('Error fetching sent join requests:', error);
+        res.status(500).json({ error: 'Failed to fetch sent join requests' });
+    }
+});
+
+// Fetch all team requests
+router.get('/all-team-requests', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        // Fetch all team requests where the user is either the sender or recipient
+        const teamRequests = await teamjoinRequest.find({
+            $or: [{ sender: userId }, { recipient: userId }]
+        }).lean();
+
+        res.json(teamRequests);
+        console.log("teamrequests",teamRequests)
+    } catch (error) {
+        console.error('Error fetching team requests:', error.message);
+        res.status(500).json({ error: 'Failed to fetch team requests' });
+    }
+});
+
 module.exports = router;

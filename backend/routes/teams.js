@@ -146,63 +146,70 @@ router.post('/', async (req, res) => {
 });
 // Create a team from mentor
 router.post('/teams', async (req, res) => {
-    try {
+  try {
       const { name, studentIds, mentorId } = req.body;
-      
+
       // Validate input
       if (!name || !studentIds || studentIds.length === 0) {
-        return res.status(400).json({ error: 'Team name and at least one student are required' });
+          return res.status(400).json({ error: 'Team name and at least one student are required' });
       }
-  
+
       // Check if students exist and are not in a team
       const students = await Student.find({ _id: { $in: studentIds } });
       if (students.length !== studentIds.length) {
-        return res.status(400).json({ error: 'One or more selected students do not exist' });
+          return res.status(400).json({ error: 'One or more selected students do not exist' });
       }
-      
+
       if (studentIds.length > MAX_TEAM_SIZE) {
-        return res.status(400).json({ 
-          error: `Team size cannot exceed ${MAX_TEAM_SIZE} members` 
-        });
+          return res.status(400).json({
+              error: `Team size cannot exceed ${MAX_TEAM_SIZE} members`
+          });
       }
 
       const studentsInTeam = await Team.find({ students: { $in: studentIds } });
       if (studentsInTeam.length > 0) {
-        const conflictingStudents = students.filter(s => 
-          studentsInTeam.some(team => team.students.includes(s._id))
-        );
-        return res.status(400).json({ 
-          error: 'One or more students are already in a team',
-          conflictingStudents: conflictingStudents.map(s => ({ name: s.name, rollNo: s.rollNo }))
-        });
+          const conflictingStudents = students.filter(s =>
+              studentsInTeam.some(team => team.students.includes(s._id))
+          );
+          return res.status(400).json({
+              error: 'One or more students are already in a team',
+              conflictingStudents: conflictingStudents.map(s => ({ name: s.name, rollNo: s.rollNo }))
+          });
       }
-      
+
+      // Automatically assign the first student as the team lead
+      const teamLeadId = studentIds[0];
+
       // Check if mentor exists (if provided)
       let mentor;
       if (mentorId) {
-        mentor = await Mentor.findById(mentorId);
-        if (!mentor) {
-          return res.status(400).json({ error: 'Selected mentor does not exist' });
-        }
+          mentor = await Mentor.findById(mentorId);
+          if (!mentor) {
+              return res.status(400).json({ error: 'Selected mentor does not exist' });
+          }
       }
-  
+
+      // Create and save new team
       const newTeam = new Team({
-        name,
-        students: studentIds,
-        mentor: mentorId
+          name,
+          students: studentIds,
+          mentor: mentorId,
+          teamLead: teamLeadId // Assign team lead automatically
       });
-      
+
       await newTeam.save();
-      
+
       // Populate student and mentor details
       await newTeam.populate('students', 'name email rollNo github');
       await newTeam.populate('mentor', 'name email github');
-      
+      await newTeam.populate('teamLead', 'name email rollNo github'); // Populate team lead info
+
       res.status(201).json(newTeam);
-    } catch (error) {
+  } catch (error) {
       res.status(500).json({ error: 'Failed to create team' });
-    }
-  });
+  }
+});
+
 
 // Get all teams
 router.get('/', async (req, res) => {

@@ -21,7 +21,22 @@ const mentorSchema = new mongoose.Schema({
   phoneNumber: { type: String, required: true },
   password: { type: String, required: true },
   github: { type: String, required: true },
-  linkedin: { type: String, required: true }
+  linkedin: { type: String, required: true },
+  status: { 
+    type: String, 
+    enum: ['pending', 'approved', 'rejected'], 
+    default: 'pending' 
+  },
+  requestDate: { 
+    type: Date, 
+    default: Date.now 
+  },
+  approvalDate: { 
+    type: Date 
+  },
+  rejectionReason: { 
+    type: String 
+  }
 });
 
 // Admin Schema
@@ -42,3 +57,4 @@ module.exports = {
   Mentor,
   Admin
 };
+

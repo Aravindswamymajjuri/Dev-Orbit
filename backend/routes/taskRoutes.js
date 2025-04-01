@@ -5,6 +5,7 @@ const Task = require('../models/taskModel');
 const Submission = require('../models/submissionModel');
 const { Student } = require('../models/roles'); // Ensure Team model is imported
 const Team = require('../models/teams');
+const mongoose = require('mongoose')
 
 // Create a new task (admin only)
 router.post('/tasks', authenticateToken, requireRole(['admin']), async (req, res) => {
@@ -227,6 +228,121 @@ router.get('/submissions/mentor/completion', authenticateToken, requireRole(['me
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+});
+// Get detailed report of student submissions
+// router.get('/submissions/report/:studentId', authenticateToken, requireRole(['mentor', 'student']), async (req, res) => {
+//   try {
+//     const { studentId } = req.params;
+    
+//     // Fetch submissions with populated task and student details
+//     const submissions = await Submission.find({ student: studentId })
+//       .populate('task', 'title description')
+//       .populate('student', 'name email')
+//       .sort({ createdAt: -1 }); // Sort by submission date, newest first
+    
+//     // Transform the data into a detailed report format
+//     const report = submissions.map(submission => ({
+//       taskTitle: submission.task.title,
+//       taskDescription: submission.task.description,
+//       githubLink: submission.githubLink,
+//       marks: submission.marks || 'Not graded',
+//       submissionDate: submission.createdAt,
+//       studentName: submission.student.name,
+//       studentEmail: submission.student.email,
+//       submissionStatus: submission.marks ? 'Graded' : 'Pending Review',
+//       submissionId: submission._id
+//     }));
+
+//     res.json({
+//       studentId,
+//       totalSubmissions: submissions.length,
+//       averageMarks: submissions.reduce((acc, curr) => acc + (curr.marks || 0), 0) / submissions.length || 0,
+//       submissions: report
+//     });
+
+//   } catch (error) {
+//     console.error('Error generating student submission report:', error);
+//     res.status(500).json({ message: error.message });
+//   }
+// });
+
+// Get detailed report of student submissions
+router.get('/submissions/report/:studentId', authenticateToken, requireRole(['mentor', 'student']), async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    // Validate studentId
+    if (!studentId || studentId === 'null' || studentId === 'undefined') {
+      return res.status(400).json({ 
+        message: 'Invalid student ID provided' 
+      });
+    }
+
+    // Validate if studentId is a valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ 
+        message: 'Invalid student ID format' 
+      });
+    }
+
+    // Check if student exists
+    const student = await Student.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ 
+        message: 'Student not found' 
+      });
+    }
+
+    // Fetch submissions with populated task and student details
+    const submissions = await Submission.find({ student: studentId })
+      .populate('task', 'title description')
+      .populate('student', 'name email')
+      .sort({ createdAt: -1 }); // Sort by submission date, newest first
+    
+    // If no submissions found, return empty report
+    if (!submissions.length) {
+      return res.json({
+        studentId,
+        totalSubmissions: 0,
+        averageMarks: 0,
+        submissions: []
+      });
+    }
+
+    // Transform the data into a detailed report format
+    const report = submissions.map(submission => ({
+      taskTitle: submission.task?.title || 'Task Deleted',
+      taskDescription: submission.task?.description || 'No description available',
+      githubLink: submission.githubLink,
+      marks: submission.marks || 'Not graded',
+      submissionDate: submission.createdAt,
+      studentName: submission.student?.name || 'Unknown Student',
+      studentEmail: submission.student?.email || 'No email',
+      submissionStatus: submission.marks ? 'Graded' : 'Pending Review',
+      submissionId: submission._id
+    }));
+
+    // Calculate average marks only for graded submissions
+    const gradedSubmissions = submissions.filter(sub => sub.marks != null);
+    const averageMarks = gradedSubmissions.length > 0
+      ? gradedSubmissions.reduce((acc, curr) => acc + (curr.marks || 0), 0) / gradedSubmissions.length
+      : 0;
+
+    res.json({
+      studentId,
+      totalSubmissions: submissions.length,
+      gradedSubmissions: gradedSubmissions.length,
+      averageMarks: Number(averageMarks.toFixed(2)),
+      submissions: report
+    });
+
+  } catch (error) {
+    console.error('Error generating student submission report:', error);
+    res.status(500).json({ 
+      message: 'Error generating report',
+      error: error.message 
+    });
   }
 });
 

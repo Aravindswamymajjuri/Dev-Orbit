@@ -50,30 +50,37 @@ router.post('/student/signup', async (req, res) => {
 });
 
 // Mentor Signup Route
-router.post('/mentor/signup', async (req,res) => {
- try {
-   const {name,email,phoneNumber,password,github,linkedin} = req.body;
+router.post('/mentor/signup', async (req, res) => {
+  try {
+    const {name, email, phoneNumber, password, github, linkedin} = req.body;
 
-   // Log the incoming request body
-   console.log("Mentor Signup Request Body:", req.body);
+    // Log the incoming request body
+    console.log("Mentor Signup Request Body:", req.body);
 
-   const hashedPassword=await bcrypt.hash(password ,10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-   const mentor=new Mentor({
-     name,
-     email,
-     phoneNumber,
-     password : hashedPassword,
-     github,
-     linkedin
-   });
+    const mentor = new Mentor({
+      name,
+      email,
+      phoneNumber,
+      password: hashedPassword,
+      github,
+      linkedin,
+      status: 'pending' // Set default status to pending
+    });
 
-   await mentor.save();
-   res.status(201).json({message:'Mentor registered successfully'});
- } catch(error){
-   console.error("Mentor Signup Error:", error);
-   res.status(500).json({error:error.message});
- }
+    await mentor.save();
+    
+    // Optionally notify admin about new pending mentor
+    // await notifyAdminAboutPendingMentor(mentor);
+    
+    res.status(201).json({
+      message: 'Mentor registration submitted successfully. Your account is pending approval by an administrator.'
+    });
+  } catch(error) {
+    console.error("Mentor Signup Error:", error);
+    res.status(500).json({error: error.message});
+  }
 });
 
 // Admin Signup Route
@@ -113,33 +120,53 @@ router.post('/student/login', async (req,res) => {
    }
 
    const token=jwt.sign({userId : student._id , role : 'student'}, 'your-secret-key',{expiresIn:'1h'});
-   res.json({token,student:student.id});
+   res.json({token,student:student._id});
  } catch(error){
    res.status(500).json({error:error.message});
  }
 });
 
 // Mentor Login Route
-router.post('/mentor/login', async (req,res) => {
- try {
-   const {email,password} = req.body;
+router.post('/mentor/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-   const mentor=await Mentor.findOne({email});
-   if(!mentor){
-     return res.status(401).json({message:'Invalid email or password'});
-   }
+    // Find the mentor by email
+    const mentor = await Mentor.findOne({ email });
 
-   const isValidPassword=await bcrypt.compare(password ,mentor.password);
-   if(!isValidPassword){
-     return res.status(401).json({message:'Invalid email or password'});
-   }
+    // Check if the mentor exists
+    if (!mentor) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
 
-   const token=jwt.sign({userId : mentor._id , role : 'mentor'}, 'your-secret-key',{expiresIn:'1h'});
-   res.json({token});
- } catch(error){
-   res.status(500).json({error:error.message});
- }
+    // Check if the mentor's status is approved
+    if (mentor.status !== 'approved') {
+      return res.status(403).json({ message: 'Your account is not approved yet. Please wait for approval from the administrator.' });
+    }
+
+    // Compare the password
+    const isValidPassword = await bcrypt.compare(password, mentor.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    // Create the JWT token
+    const token = jwt.sign(
+      { userId: mentor._id, role: 'mentor' },
+      'your-secret-key',
+      { expiresIn: '1h' }
+    );
+
+    // Send the token in response
+    res.json({ token });
+  } catch (error) {
+    console.error("Mentor Login Error:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
+
+
+
 
 // Admin Login Route
 // Step 1: Verify credentials and send OTP
@@ -165,7 +192,6 @@ router.post('/admin/login', async (req, res) => {
       subject: 'Login OTP',
       text: `Your OTP for login is: ${otp}`
     });
-
     res.json({ message: 'OTP sent successfully', requireOTP: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -187,9 +213,10 @@ router.post('/admin/verify-otp', async (req, res) => {
       'your-secret-key',
       { expiresIn: '1h' }
     );
+    console.log(storedData.adminId.toString())
 
     otpStore.delete(email);
-    res.json({ token });
+    res.json({ token,admin: storedData.adminId.toString() });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -481,5 +508,8 @@ router.post('/mentor/reset-forgot-password', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
+
 
 module.exports = router;
