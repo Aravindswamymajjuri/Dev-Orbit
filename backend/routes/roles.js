@@ -272,13 +272,13 @@ router.post('/mentor/login', async (req, res) => {
 
     // Create the JWT token
     const token = jwt.sign(
-      { mentor: mentor._id, role: 'mentor' },
+      { userId: mentor._id, role: 'mentor' },
       'your-secret-key',
       { expiresIn: '1h' }
     );
 
     // Send the token in response
-    res.json({ token,mentor: mentor._id,role: 'mentor' });
+    res.json({ token,role: 'mentor', mentor: mentor._id });
   } catch (error) {
     console.error("Mentor Login Error:", error);
     res.status(500).json({ error: error.message });

@@ -85,6 +85,11 @@ const AdminHeader = () => {
       key: '/admin/mentor-feedbacks',
       icon: <StarOutlined />,
       label: 'Mentor Feedbacks',
+    },
+    {
+      key: '/admin/resource-approval',
+      icon: <CheckCircleOutlined />,
+      label: 'Resource Approval',
     }, // Add this line
   ];
 

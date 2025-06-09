@@ -138,6 +138,8 @@ const UserNavbar = () => {
               <li><a href="/mentor/calendar">Calendar</a></li>
               <li><a href="/mentor/leaderboard">Leaderboard</a></li>
               <li><a href="/mentor/teams">Team Formation</a></li>
+              <li><a href="/mentor/mentorevents">Create Events</a></li>
+              <li><a href="/mentor/mentorresources">Add Resources</a></li>
               <li><a href="/mentor/verify-certificate">verify certificate</a></li>
               {/* Updated Logout Menu Item */}
               <li onClick={handleLogout} className='logout'>Logout</li>

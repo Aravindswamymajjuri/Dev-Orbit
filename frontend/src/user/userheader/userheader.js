@@ -198,6 +198,9 @@ const UserNavbar = () => {
                 <a href="/user/view-certificate">Certificate</a>
               </li>
               <li>
+                <a href="/user/mentorevents">Events</a>
+              </li>
+              <li>
                 <a href="/user/feedback">Mentor Feedback</a>
               </li>
               <li onClick={handleLogout} className="logout">

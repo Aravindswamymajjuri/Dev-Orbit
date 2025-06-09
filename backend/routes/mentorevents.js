@@ -101,8 +101,8 @@ router.get('/my-events', authenticateToken, requireRole(['mentor']), async (req,
     }
 });
 
-// Get mentor's assigned teams - MOVED BEFORE /:eventId route
-router.get('/mentor/teams', authenticateToken, requireRole(['mentor']), async (req, res) => {
+// Get mentor's assigned teams - FIXED: Changed from '/mentor/teams' to '/teams'
+router.get('/teams', authenticateToken, requireRole(['mentor']), async (req, res) => {
     try {
         const teams = await getMentorTeams(req.user.userId);
         
@@ -164,7 +164,7 @@ router.get('/student/my-events', authenticateToken, requireRole(['student']), as
     }
 });
 
-// Get single event by ID (Mentor only - own events) - MOVED AFTER specific routes
+// Get single event by ID (Mentor only - own events) - MOVED TO END to avoid conflicts
 router.get('/:eventId', authenticateToken, requireRole(['mentor']), async (req, res) => {
     try {
         const event = await Event.findOne({
