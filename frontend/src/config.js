@@ -1,5 +1,5 @@
 const config = {
-  backendUrl: 'http://127.0.0.1:5000'
+  backendUrl: 'https://dev-orbit.onrender.com'
 };
 
 export default config;
