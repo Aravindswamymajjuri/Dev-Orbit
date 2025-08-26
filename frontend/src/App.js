@@ -27,7 +27,7 @@ function App() {
       setTimeout(() => {
         setLoading(false);
       }, 500); // Duration of the fade-out animation
-    }, 2000); // Adjust the timeout duration as needed
+    }, 2000); // Adjust the timeout duration as needed // 
 
     return () => clearTimeout(timer);
   }, []);
