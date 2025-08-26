@@ -13,11 +13,17 @@ router.get('/students', async (req, res) => {
       year,
       search,
       sortBy = 'name',
-      sortOrder = 'asc'
+      sortOrder = 'asc',
+      includeAll = false // New parameter to optionally include all statuses
     } = req.query;
 
-    // Build filter object
+    // Build filter object - default to approved only
     const filter = {};
+    
+    // Only include status filter if not explicitly requesting all students
+    if (includeAll !== 'true') {
+      filter.status = 'approved'; // <-- ONLY APPROVED STUDENTS by default
+    }
     
     if (currentYear) {
       filter.currentYear = currentYear;
@@ -65,9 +71,12 @@ router.get('/students', async (req, res) => {
     const totalCount = await Student.countDocuments(filter);
     const totalPages = Math.ceil(totalCount / limitNum);
 
-    // Get statistics
+    // Get statistics - also filter by approved status
+    const statsFilter = { ...filter };
+    delete statsFilter.$or; // Remove search filter for stats
+    
     const stats = await Student.aggregate([
-      { $match: filter },
+      { $match: statsFilter },
       {
         $group: {
           _id: '$currentYear',
@@ -96,7 +105,8 @@ router.get('/students', async (req, res) => {
           year,
           search,
           sortBy,
-          sortOrder
+          sortOrder,
+          statusFilter: includeAll === 'true' ? 'all' : 'approved'
         }
       }
     });
@@ -147,8 +157,14 @@ router.get('/students/filters/options', async (req, res) => {
 // Route to get students count by various groupings
 router.get('/students/analytics/summary', async (req, res) => {
   try {
-    // Students by current year
+    const { includeAll = false } = req.query;
+    
+    // Base filter for approved students only (unless explicitly requested otherwise)
+    const baseFilter = includeAll === 'true' ? {} : { status: 'approved' };
+
+    // Students by current year - APPROVED ONLY
     const byCurrentYear = await Student.aggregate([
+      { $match: baseFilter },
       {
         $group: {
           _id: '$currentYear',
@@ -158,8 +174,9 @@ router.get('/students/analytics/summary', async (req, res) => {
       { $sort: { '_id': 1 } }
     ]);
 
-    // Students by branch
+    // Students by branch - APPROVED ONLY
     const byBranch = await Student.aggregate([
+      { $match: baseFilter },
       {
         $group: {
           _id: '$branch',
@@ -169,8 +186,9 @@ router.get('/students/analytics/summary', async (req, res) => {
       { $sort: { 'count': -1 } }
     ]);
 
-    // Students by college
+    // Students by college - APPROVED ONLY
     const byCollege = await Student.aggregate([
+      { $match: baseFilter },
       {
         $group: {
           _id: '$college',
@@ -180,8 +198,9 @@ router.get('/students/analytics/summary', async (req, res) => {
       { $sort: { 'count': -1 } }
     ]);
 
-    // Students by admission year
+    // Students by admission year - APPROVED ONLY
     const byYear = await Student.aggregate([
+      { $match: baseFilter },
       {
         $group: {
           _id: '$year',
@@ -191,8 +210,8 @@ router.get('/students/analytics/summary', async (req, res) => {
       { $sort: { '_id': -1 } }
     ]);
 
-    // Total count
-    const totalStudents = await Student.countDocuments();
+    // Total count - APPROVED ONLY
+    const totalStudents = await Student.countDocuments(baseFilter);
 
     res.json({
       success: true,
@@ -201,7 +220,8 @@ router.get('/students/analytics/summary', async (req, res) => {
         byCurrentYear,
         byBranch,
         byCollege,
-        byYear
+        byYear,
+        statusFilter: includeAll === 'true' ? 'all' : 'approved'
       }
     });
 
@@ -218,7 +238,7 @@ router.get('/students/analytics/summary', async (req, res) => {
 router.get('/students/year-statistics', async (req, res) => {
   try {
     const { year, search, page = 1, limit = 100 } = req.query;
-    const filter = {};
+    const filter = { status: 'approved' }; // <-- ONLY APPROVED STUDENTS
 
     if (year && year !== 'all') {
       filter.year = year;
@@ -233,13 +253,13 @@ router.get('/students/year-statistics', async (req, res) => {
     }
 
     // If search or year filter is present, return filtered students grouped by currentYear
-    if (Object.keys(filter).length > 0) {
+    if (Object.keys(filter).length > 1) { // Changed from > 0 to > 1 since status filter is always present
       // Pagination
       const pageNum = parseInt(page);
       const limitNum = parseInt(limit);
       const skip = (pageNum - 1) * limitNum;
 
-      // Get filtered students
+      // Get filtered students - ONLY APPROVED
       const students = await Student.find(filter)
         .select('-password')
         .skip(skip)
@@ -261,6 +281,7 @@ router.get('/students/year-statistics', async (req, res) => {
           canPromote: currentYear !== 'alumni',
           canDemote: currentYear !== 'first year'
         };
+      
       });
 
       return res.json({
@@ -272,8 +293,11 @@ router.get('/students/year-statistics', async (req, res) => {
       });
     }
 
-    // Default: return statistics for all students grouped by currentYear
+    // Default: return statistics for all APPROVED students grouped by currentYear
     const stats = await Student.aggregate([
+      {
+        $match: { status: 'approved' } // <-- ONLY APPROVED STUDENTS
+      },
       {
         $group: {
           _id: '$currentYear',
@@ -415,6 +439,7 @@ const getPreviousProgression = (currentYear, year) => {
 router.patch('/students/promote-by-year/:currentYear', async (req, res) => {
   try {
     const { currentYear } = req.params;
+    const { year } = req.query; // Optional admission year filter
     
     // Validate currentYear parameter
     const validYears = ['first year', 'second year', 'third year', 'fourth year'];
@@ -433,13 +458,27 @@ router.patch('/students/promote-by-year/:currentYear', async (req, res) => {
       });
     }
     
-    // Find all students with the specified current year
-    const students = await Student.find({ currentYear: currentYear });
+    // Build filter for ONLY APPROVED students
+    const filter = { 
+      currentYear: currentYear,
+      status: 'approved' // <-- ONLY APPROVED STUDENTS
+    };
+    
+    // Add year filter if provided
+    if (year && year.trim() !== '') {
+      const numericYear = parseInt(year);
+      if (!isNaN(numericYear)) {
+        filter.year = numericYear.toString();
+      }
+    }
+    
+    // Find all APPROVED students with the specified current year
+    const students = await Student.find(filter);
     
     if (students.length === 0) {
       return res.status(404).json({ 
         success: false, 
-        message: `No students found in ${currentYear}` 
+        message: `No approved students found in ${currentYear}${year ? ` from ${year} batch` : ''}` 
       });
     }
     
@@ -487,9 +526,10 @@ router.patch('/students/promote-by-year/:currentYear', async (req, res) => {
     
     res.json({
       success: true,
-      message: `Bulk promotion completed for ${currentYear}. ${results.length} students promoted, ${errors.length} errors.`,
+      message: `Bulk promotion completed for approved ${currentYear} students${year ? ` from ${year} batch` : ''}. ${results.length} students promoted, ${errors.length} errors.`,
       data: {
         originalYear: currentYear,
+        admissionYear: year || 'all',
         totalStudents: students.length,
         promoted: results,
         errors: errors
@@ -505,10 +545,12 @@ router.patch('/students/promote-by-year/:currentYear', async (req, res) => {
   }
 });
 
+
 // Route to demote ALL students of a specific current year
 router.patch('/students/demote-by-year/:currentYear', async (req, res) => {
   try {
     const { currentYear } = req.params;
+    const { year } = req.query; // Optional admission year filter
     
     // Validate currentYear parameter
     const validYears = ['second year', 'third year', 'fourth year', 'alumni'];
@@ -527,13 +569,27 @@ router.patch('/students/demote-by-year/:currentYear', async (req, res) => {
       });
     }
     
-    // Find all students with the specified current year
-    const students = await Student.find({ currentYear: currentYear });
+    // Build filter for ONLY APPROVED students
+    const filter = { 
+      currentYear: currentYear,
+      status: 'approved' // <-- ONLY APPROVED STUDENTS
+    };
+    
+    // Add year filter if provided
+    if (year && year.trim() !== '') {
+      const numericYear = parseInt(year);
+      if (!isNaN(numericYear)) {
+        filter.year = numericYear.toString();
+      }
+    }
+    
+    // Find all APPROVED students with the specified current year
+    const students = await Student.find(filter);
     
     if (students.length === 0) {
       return res.status(404).json({ 
         success: false, 
-        message: `No students found in ${currentYear}` 
+        message: `No approved students found in ${currentYear}${year ? ` from ${year} batch` : ''}` 
       });
     }
     
@@ -581,9 +637,10 @@ router.patch('/students/demote-by-year/:currentYear', async (req, res) => {
     
     res.json({
       success: true,
-      message: `Bulk demotion completed for ${currentYear}. ${results.length} students demoted, ${errors.length} errors.`,
+      message: `Bulk demotion completed for approved ${currentYear} students${year ? ` from ${year} batch` : ''}. ${results.length} students demoted, ${errors.length} errors.`,
       data: {
         originalYear: currentYear,
+        admissionYear: year || 'all',
         totalStudents: students.length,
         demoted: results,
         errors: errors
@@ -598,6 +655,7 @@ router.patch('/students/demote-by-year/:currentYear', async (req, res) => {
     });
   }
 });
+
 
 
 
@@ -789,6 +847,413 @@ router.get('/admin/students/approval-stats', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching approval stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+
+// Additional routes to add to your existing admin routes
+
+// Get dashboard stats including pending approvals
+router.get('/admin/dashboard/stats', async (req, res) => {
+  try {
+    const totalStudents = await Student.countDocuments();
+    const pendingApprovals = await Student.countDocuments({ status: 'pending' });
+    const approvedStudents = await Student.countDocuments({ status: 'approved' });
+    const rejectedStudents = await Student.countDocuments({ status: 'rejected' });
+    
+    // Get pending students by currentYear
+    const pendingByYear = await Student.aggregate([
+      { $match: { status: 'pending' } },
+      {
+        $group: {
+          _id: '$currentYear',
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id': 1 } }
+    ]);
+
+    // Recent pending registrations (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const recentPending = await Student.countDocuments({
+      status: 'pending',
+      createdAt: { $gte: sevenDaysAgo }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        overview: {
+          totalStudents,
+          pendingApprovals,
+          approvedStudents,
+          rejectedStudents,
+          recentPending
+        },
+        pendingByYear,
+        approvalRate: totalStudents > 0 ? ((approvedStudents / totalStudents) * 100).toFixed(1) : 0
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Get detailed pending students with pagination
+router.get('/admin/students/pending/detailed', async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      sortBy = 'createdAt', 
+      sortOrder = 'desc',
+      currentYear,
+      search 
+    } = req.query;
+
+    // Build filter
+    const filter = { status: 'pending' };
+    
+    if (currentYear) {
+      filter.currentYear = currentYear;
+    }
+    
+    if (search) {
+      filter.$or = [
+        { name: new RegExp(search, 'i') },
+        { email: new RegExp(search, 'i') },
+        { rollNo: new RegExp(search, 'i') },
+        { branch: new RegExp(search, 'i') },
+        { college: new RegExp(search, 'i') }
+      ];
+    }
+
+    // Pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sort
+    const sortObj = {};
+    sortObj[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    const pendingStudents = await Student.find(filter)
+      .select('-password -otp -otpExpiry')
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limitNum)
+      .lean();
+
+    const totalCount = await Student.countDocuments(filter);
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    // Add time since registration for each student
+    const studentsWithDuration = pendingStudents.map(student => ({
+      ...student,
+      daysSinceRegistration: Math.floor((new Date() - new Date(student.createdAt)) / (1000 * 60 * 60 * 24)),
+      formattedCreatedAt: new Date(student.createdAt).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        students: studentsWithDuration,
+        pagination: {
+          currentPage: pageNum,
+          totalPages,
+          totalCount,
+          hasNextPage: pageNum < totalPages,
+          hasPrevPage: pageNum > 1,
+          limit: limitNum
+        },
+        filters: {
+          currentYear,
+          search,
+          sortBy,
+          sortOrder
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching detailed pending students:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Approve student with notification
+router.patch('/admin/students/:id/approve', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminId, notificationMessage } = req.body;
+
+    // Validate student exists and is pending
+    const student = await Student.findById(id);
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
+
+    if (student.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: `Student is not in pending status. Current status: ${student.status}`
+      });
+    }
+
+    // Update student status
+    const updatedStudent = await Student.findByIdAndUpdate(
+      id,
+      {
+        status: 'approved',
+        approvedBy: adminId,
+        approvedAt: new Date(),
+        rejectionReason: null // Clear any previous rejection reason
+      },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    // Log the approval
+    console.log('Student approved:', {
+      studentId: id,
+      studentName: updatedStudent.name,
+      studentEmail: updatedStudent.email,
+      approvedBy: adminId,
+      approvedAt: updatedStudent.approvedAt
+    });
+
+    // TODO: Send email notification to student about approval
+    // You can implement email notification here
+
+    res.json({
+      success: true,
+      message: 'Student approved successfully',
+      data: { 
+        student: updatedStudent,
+        notificationSent: false // Set to true when email notification is implemented
+      }
+    });
+  } catch (error) {
+    console.error('Error approving student:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Reject student with detailed reason
+router.patch('/admin/students/:id/reject', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason, adminId, detailedReason } = req.body;
+
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rejection reason is required'
+      });
+    }
+
+    const student = await Student.findById(id);
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
+
+    if (student.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: `Student is not in pending status. Current status: ${student.status}`
+      });
+    }
+
+    const fullReason = detailedReason ? `${reason}. ${detailedReason}` : reason;
+
+    const updatedStudent = await Student.findByIdAndUpdate(
+      id,
+      {
+        status: 'rejected',
+        rejectionReason: fullReason,
+        approvedBy: adminId, // Track who rejected
+        approvedAt: new Date() // Track when rejected
+      },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    // Log the rejection
+    console.log('Student rejected:', {
+      studentId: id,
+      studentName: updatedStudent.name,
+      studentEmail: updatedStudent.email,
+      rejectedBy: adminId,
+      rejectionReason: fullReason,
+      rejectedAt: updatedStudent.approvedAt
+    });
+
+    // TODO: Send email notification to student about rejection
+    // You can implement email notification here
+
+    res.json({
+      success: true,
+      message: 'Student rejected successfully',
+      data: { 
+        student: updatedStudent,
+        notificationSent: false // Set to true when email notification is implemented
+      }
+    });
+  } catch (error) {
+    console.error('Error rejecting student:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Reset student status (for re-review)
+router.patch('/admin/students/:id/reset-status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminId } = req.body;
+
+    const student = await Student.findById(id);
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
+
+    // Only allow reset for rejected students
+    if (student.status !== 'rejected') {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only reset status for rejected students'
+      });
+    }
+
+    const updatedStudent = await Student.findByIdAndUpdate(
+      id,
+      {
+        status: 'pending',
+        rejectionReason: null,
+        approvedBy: null,
+        approvedAt: null
+      },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    console.log('Student status reset to pending:', {
+      studentId: id,
+      studentName: updatedStudent.name,
+      resetBy: adminId
+    });
+
+    res.json({
+      success: true,
+      message: 'Student status reset to pending for re-review',
+      data: { student: updatedStudent }
+    });
+  } catch (error) {
+    console.error('Error resetting student status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Get approval history/activity log
+router.get('/admin/approval-activity', async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status, days = 30 } = req.query;
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build date filter
+    const dateFilter = new Date();
+    dateFilter.setDate(dateFilter.getDate() - parseInt(days));
+
+    // Build match filter
+    const matchFilter = {
+      approvedAt: { $gte: dateFilter },
+      status: { $in: ['approved', 'rejected'] }
+    };
+
+    if (status && ['approved', 'rejected'].includes(status)) {
+      matchFilter.status = status;
+    }
+
+    const activities = await Student.find(matchFilter)
+      .select('name email currentYear branch college status rejectionReason approvedBy approvedAt')
+      .populate({ path: 'approvedBy', select: 'name email', strictPopulate: false }) // <-- Fix: allow population even if not in schema
+      .sort({ approvedAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean();
+
+    const totalCount = await Student.countDocuments(matchFilter);
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    // Format activities with readable dates
+    const formattedActivities = activities.map(activity => ({
+      ...activity,
+      formattedDate: new Date(activity.approvedAt).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      actionType: activity.status === 'approved' ? 'Approved' : 'Rejected',
+      adminName: activity.approvedBy ? activity.approvedBy.name : 'Unknown Admin'
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        activities: formattedActivities,
+        pagination: {
+          currentPage: pageNum,
+          totalPages,
+          totalCount,
+          hasNextPage: pageNum < totalPages,
+          hasPrevPage: pageNum > 1,
+          limit: limitNum
+        },
+        filters: {
+          status,
+          days: parseInt(days)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching approval activity:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

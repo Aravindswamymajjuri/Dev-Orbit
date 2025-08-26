@@ -18,6 +18,7 @@ const AdminApprovalDashboard = () => {
   const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0, total: 0 });
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
+  console.log(stats)
 
   // API Base URL - replace with your actual API endpoint
   const API_BASE = `${config.backendUrl}/admin-approvals`; // Update this to your backend URL
@@ -60,7 +61,7 @@ const AdminApprovalDashboard = () => {
         const requestType = determineRequestType(request);
         return { ...request, requestType };
       }) : [];
-
+      console.log('Fetched requests:', requestsWithType);
       setRequests(requestsWithType);
       calculateStats(requestsWithType);
     } catch (error) {
@@ -241,6 +242,17 @@ const AdminApprovalDashboard = () => {
     return request.title || request.folderTitle || 'Untitled';
   };
 
+  // Helper functions for file URLs
+  const getBackendUrl = () => {
+    return config.backendUrl || 'http://localhost:5000';
+  };
+
+  const getPDFDownloadUrl = (requestId, view = false) =>
+    `${getBackendUrl()}/mentorresources/download/pdf/${requestId}${view ? '?view=1' : ''}`;
+
+  const getVideoStreamUrl = (requestId) =>
+    `${getBackendUrl()}/mentorresources/stream/video/${requestId}`;
+
   // Render request details modal content
   const renderRequestDetails = () => {
     if (!selectedRequest) return null;
@@ -309,15 +321,28 @@ const AdminApprovalDashboard = () => {
         {requestType === 'video' && (
           <div className="mentorresources-details-section">
             <div className="mentorresources-field-group">
-              <label className="mentorresources-field-label">Video Link</label>
-              <a
-                className="mentorresources-field-link"
-                href={selectedRequest.link}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {selectedRequest.link} <ExternalLink className="mentorresources-field-link-icon" />
-              </a>
+              <label className="mentorresources-field-label">Video</label>
+              {selectedRequest.sourceType === 'upload' && selectedRequest._id ? (
+                <a
+                  className="mentorresources-field-link"
+                  href={getVideoStreamUrl(selectedRequest._id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View Video <ExternalLink className="mentorresources-field-link-icon" />
+                </a>
+              ) : selectedRequest.link ? (
+                <a
+                  className="mentorresources-field-link"
+                  href={selectedRequest.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {selectedRequest.link} <ExternalLink className="mentorresources-field-link-icon" />
+                </a>
+              ) : (
+                <span className="mentorresources-field-value">No video file or link</span>
+              )}
             </div>
           </div>
         )}
@@ -325,15 +350,30 @@ const AdminApprovalDashboard = () => {
         {requestType === 'pdf' && (
           <div className="mentorresources-details-section">
             <div className="mentorresources-field-group">
-              <label className="mentorresources-field-label">PDF Link</label>
-              <a
-                className="mentorresources-field-link"
-                href={selectedRequest.pdf}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {selectedRequest.pdf} <ExternalLink className="mentorresources-field-link-icon" />
-              </a>
+              <label className="mentorresources-field-label">PDF File</label>
+              {selectedRequest._id ? (
+                <div>
+                  <a
+                    className="mentorresources-field-link"
+                    href={getPDFDownloadUrl(selectedRequest._id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Download PDF <ExternalLink className="mentorresources-field-link-icon" />
+                  </a>
+                  <div style={{ marginTop: 12 }}>
+                    <iframe
+                      src={getPDFDownloadUrl(selectedRequest._id, true)}
+                      title="Uploaded PDF"
+                      width="100%"
+                      height="500px"
+                      style={{ border: '1px solid #ddd', borderRadius: 8 }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <span className="mentorresources-field-value">No PDF file</span>
+              )}
             </div>
           </div>
         )}

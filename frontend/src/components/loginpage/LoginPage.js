@@ -46,13 +46,13 @@ const LoginPage = ({ onNavigate = () => {} }) => {
       // Handle role-specific data storage
       if (userRole === 'student') {
         if (response.data.student) {
-          localStorage.setItem('student', response.data.student);
+          localStorage.setItem('student', response.data.student.id);
         }
         
         // Store student current year if available
-        if (response.data.studentyear) {
-          localStorage.setItem('studentYear', response.data.studentyear);
-          console.log('Student year stored in localStorage:', response.data.studentyear);
+        if (response.data.student.currentYear) {
+          localStorage.setItem('studentYear', response.data.student.currentYear);
+          console.log('Student year stored in localStorage:', response.data.student.currentYear);
         } else {
           console.log('No studentyear found in response');
         }

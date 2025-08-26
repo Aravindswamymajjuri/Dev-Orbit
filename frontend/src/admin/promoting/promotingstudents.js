@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, ArrowUp, ArrowDown, AlertCircle, CheckCircle, RefreshCw, Search } from 'lucide-react';
 import './promotingstudents.css'; // Adjust the path as necessary
 import config from '../../config'; // Adjust the path to your config file
+import AdminDashboard from '../promoting/Lepromoting';
 
 const BulkYearManagement = () => {
   const [yearStats, setYearStats] = useState([]);
@@ -477,6 +478,7 @@ const BulkYearManagement = () => {
           </div>
         </div>
       </div>
+      <AdminDashboard/>
     </div>
   );
 };

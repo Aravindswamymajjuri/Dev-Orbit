@@ -1,7 +1,8 @@
-// routes/mentorResources.js - DEBUGGING VERSION
+// routes/mentorResources.js - Enhanced with file storage
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const path = require('path');
 
 // Import models with error handling
 let ItemRequest, FolderRequest, PDFRequest, VideoFolderRequest, VideoRequest;
@@ -25,11 +26,7 @@ try {
   console.log('✅ Folder model loaded successfully');
 } catch (error) {
   console.error('❌ Error loading folder model:', error);
-  // Create fallback
-  Folder = {
-    findOne: async () => null,
-    find: async () => []
-  };
+  Folder = { findOne: async () => null, find: async () => [] };
 }
 
 try {
@@ -38,72 +35,76 @@ try {
   console.log('✅ VideoFolder model loaded successfully');
 } catch (error) {
   console.error('❌ Error loading VideoFolder model:', error);
-  // Create fallback
-  VideoFolder = {
-    findOne: async () => null,
-    find: async () => []
-  };
+  VideoFolder = { findOne: async () => null, find: async () => [] };
 }
 
-// Configure multer for file uploads
+// Enhanced multer configuration for multiple file types
 const storage = multer.memoryStorage();
 const upload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
+    fileSize: 100 * 1024 * 1024 // 100MB limit for videos
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') {
-      cb(null, true);
+    const { requestType } = req.body;
+    
+    if (requestType === 'pdf') {
+      if (file.mimetype === 'application/pdf') {
+        cb(null, true);
+      } else {
+        cb(new Error('Only PDF files are allowed for PDF requests'), false);
+      }
+    } else if (requestType === 'video') {
+      // Allow video files
+      if (file.mimetype.startsWith('video/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only video files are allowed for video requests'), false);
+      }
     } else {
-      cb(new Error('Only PDF files are allowed'), false);
+      cb(null, true);
     }
   }
 });
 
-// GET MENTOR'S REQUESTS - IMPROVED ERROR HANDLING
+// GET MENTOR'S REQUESTS WITH FILE METADATA
 router.get('/my-requests/:mentorId', async (req, res) => {
   try {
     const { mentorId } = req.params;
     
     console.log('📋 Fetching requests for mentor:', mentorId);
     
-    if (!mentorId) {
-      console.log('❌ No mentor ID provided');
-      return res.status(400).json({ error: 'Mentor ID is required' });
+    if (!mentorId || !/^[0-9a-fA-F]{24}$/.test(mentorId)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Valid mentor ID is required' 
+      });
     }
 
-    // Validate mentorId format (MongoDB ObjectId)
-    if (!/^[0-9a-fA-F]{24}$/.test(mentorId)) {
-      console.log('❌ Invalid mentor ID format:', mentorId);
-      return res.status(400).json({ error: 'Invalid mentor ID format' });
-    }
-
-    // Check if models are available
     if (!ItemRequest || !FolderRequest || !PDFRequest || !VideoFolderRequest || !VideoRequest) {
-      console.log('❌ Models not properly loaded');
-      return res.status(500).json({ error: 'Database models not available' });
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database models not available' 
+      });
     }
 
-    console.log('🔍 Fetching all request types...');
-
-    // Fetch all request types for this mentor with individual error handling
+    // Fetch all request types with file metadata
     const results = await Promise.allSettled([
       ItemRequest.find({ mentorId }).sort({ requestDate: -1 }).lean(),
       FolderRequest.find({ mentorId }).sort({ requestDate: -1 }).lean(),
-      PDFRequest.find({ mentorId }).populate('folderId', 'title').sort({ requestDate: -1 }).lean(),
+      PDFRequest.find({ mentorId })
+        .populate('folderId', 'title')
+        .select('-pdf.data') // Exclude file data for list view
+        .sort({ requestDate: -1 })
+        .lean(),
       VideoFolderRequest.find({ mentorId }).sort({ requestDate: -1 }).lean(),
-      VideoRequest.find({ mentorId }).populate('folderId', 'folderTitle').sort({ requestDate: -1 }).lean()
+      VideoRequest.find({ mentorId })
+        .populate('folderId', 'folderTitle')
+        .select('-videoFile.data -thumbnail.data') // Exclude file data for list view
+        .sort({ requestDate: -1 })
+        .lean()
     ]);
-
-    console.log('📊 Promise results:', results.map((r, i) => ({
-      index: i,
-      status: r.status,
-      count: r.status === 'fulfilled' ? r.value?.length : 0,
-      error: r.status === 'rejected' ? r.reason?.message : null
-    })));
-
-    // Extract successful results and log failed ones
+ console.log('✅ Fetched all result types',results);
     const [itemsResult, foldersResult, pdfsResult, videoFoldersResult, videosResult] = results;
     
     const items = itemsResult.status === 'fulfilled' ? itemsResult.value : [];
@@ -111,299 +112,442 @@ router.get('/my-requests/:mentorId', async (req, res) => {
     const pdfs = pdfsResult.status === 'fulfilled' ? pdfsResult.value : [];
     const videoFolders = videoFoldersResult.status === 'fulfilled' ? videoFoldersResult.value : [];
     const videos = videosResult.status === 'fulfilled' ? videosResult.value : [];
+    console.log('🎬 Video requests found:', videoFolders,videos);
 
-    // Log any failed queries
-    results.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        const types = ['ItemRequest', 'FolderRequest', 'PDFRequest', 'VideoFolderRequest', 'VideoRequest'];
-        console.error(`❌ Failed to fetch ${types[index]}:`, result.reason);
-      }
-    });
-
-    console.log('📈 Retrieved counts:', {
-      items: items.length,
-      folders: folders.length,
-      pdfs: pdfs.length,
-      videoFolders: videoFolders.length,
-      videos: videos.length
-    });
-
-    // Add requestType to each request for frontend identification
+    // Add file metadata and request type
     const allRequests = [
       ...items.map(item => ({ ...item, requestType: 'item' })),
       ...folders.map(folder => ({ ...folder, requestType: 'folder' })),
-      ...pdfs.map(pdf => ({ ...pdf, requestType: 'pdf' })),
+      ...pdfs.map(pdf => ({ 
+        ...pdf, 
+        requestType: 'pdf',
+        hasFile: !!pdf.pdf,
+        fileInfo: pdf.pdf ? {
+          filename: pdf.pdf.filename,
+          originalName: pdf.pdf.originalName,
+          size: pdf.pdf.size,
+          uploadDate: pdf.pdf.uploadDate
+        } : null
+      })),
       ...videoFolders.map(vf => ({ ...vf, requestType: 'videoFolder' })),
-      ...videos.map(video => ({ ...video, requestType: 'video' }))
+      ...videos.map(video => ({ 
+        ...video, 
+        requestType: 'video',
+        hasFile: !!video.videoFile,
+        fileInfo: video.videoFile ? {
+          filename: video.videoFile.filename,
+          originalName: video.videoFile.originalName,
+          size: video.videoFile.size,
+          uploadDate: video.videoFile.uploadDate
+        } : null,
+        hasThumbnail: !!video.thumbnail
+      }))
     ];
 
-    // Sort by request date (newest first)
     allRequests.sort((a, b) => new Date(b.requestDate) - new Date(a.requestDate));
 
     console.log('✅ Successfully fetched', allRequests.length, 'total requests');
     
-    res.json(allRequests);
+    res.json({
+      success: true,
+      requests: allRequests,
+      counts: {
+        items: items.length,
+        folders: folders.length,
+        pdfs: pdfs.length,
+        videoFolders: videoFolders.length,
+        videos: videos.length,
+        total: allRequests.length
+      }
+    });
     
   } catch (error) {
     console.error('❌ Error fetching mentor requests:', error);
-    
-    // More detailed error response
     res.status(500).json({ 
+      success: false,
       error: 'Internal server error',
-      message: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: error.message
     });
   }
 });
 
-// CREATE NEW REQUEST - IMPROVED ERROR HANDLING 
-router.post('/request', upload.single('pdf'), async (req, res) => {
+// CREATE NEW REQUEST WITH FILE UPLOAD
+// CREATE NEW REQUEST WITH FILE UPLOAD
+router.post('/request', upload.single('file'), async (req, res) => {
+ try {
+   console.log('📝 Creating new request...');
+   console.log('Request body:', req.body);
+   console.log('Request file:', req.file ? { name: req.file.originalname, size: req.file.size, type: req.file.mimetype } : null);
+   
+   const { requestType, mentorId } = req.body;
+   
+   if (!requestType || !mentorId) {
+     return res.status(400).json({ 
+       success: false, 
+       message: 'Request type and mentor ID are required' 
+     });
+   }
+
+   if (!/^[0-9a-fA-F]{24}$/.test(mentorId)) {
+     return res.status(400).json({ 
+       success: false, 
+       message: 'Invalid mentor ID format' 
+     });
+   }
+
+   if (!ItemRequest || !FolderRequest || !PDFRequest || !VideoFolderRequest || !VideoRequest) {
+     return res.status(500).json({ 
+       success: false, 
+       message: 'Database models not available' 
+     });
+   }
+
+   let newRequest;
+
+   switch (requestType) {
+     case 'item':
+       const { title, hyperlink, description } = req.body;
+       if (!title || !hyperlink || !description) {
+         return res.status(400).json({ 
+           success: false, 
+           message: 'Title, hyperlink, and description are required for item requests' 
+         });
+       }
+       
+       newRequest = new ItemRequest({
+         mentorId,
+         title,
+         hyperlink,
+         description,
+         status: 'pending',
+         requestDate: new Date()
+       });
+       break;
+
+     case 'folder':
+       const { folderTitle } = req.body;
+       if (!folderTitle) {
+         return res.status(400).json({ 
+           success: false, 
+           message: 'Folder title is required for folder requests' 
+         });
+       }
+       
+       newRequest = new FolderRequest({
+         mentorId,
+         folderTitle,
+         status: 'pending',
+         requestDate: new Date()
+       });
+       break;
+
+     case 'pdf':
+       const { title: pdfTitle, folderId } = req.body;
+       if (!folderId || !req.file) {
+         return res.status(400).json({ 
+           success: false, 
+           message: 'Folder ID and PDF file are required for PDF requests' 
+         });
+       }
+       
+       // Validate folder exists and is accessible
+       let validFolder = null;
+       try {
+         const approvedFolderRequest = await FolderRequest.findOne({
+           _id: folderId,
+           mentorId: mentorId,
+           status: 'approved'
+         });
+         validFolder = approvedFolderRequest;
+       } catch (error) {
+         console.log('Error checking folder request:', error.message);
+       }
+       
+       if (!validFolder && Folder.findOne) {
+         try {
+           const existingFolder = await Folder.findOne({
+             _id: folderId,
+             createdBy: mentorId
+           });
+           validFolder = existingFolder;
+         } catch (error) {
+           console.log('Error checking existing folder:', error.message);
+         }
+       }
+       
+       if (!validFolder) {
+         return res.status(400).json({ 
+           success: false, 
+           message: 'Selected folder does not exist or is not approved' 
+         });
+       }
+       
+       newRequest = new PDFRequest({
+         mentorId,
+         title: pdfTitle || req.file.originalname.replace('.pdf', ''),
+         folderId,
+         pdf: {
+           data: req.file.buffer,
+           contentType: req.file.mimetype,
+           filename: `${Date.now()}_${req.file.originalname}`,
+           originalName: req.file.originalname,
+           size: req.file.size,
+           uploadDate: new Date()
+         },
+         status: 'pending',
+         requestDate: new Date()
+       });
+       break;
+
+     case 'videoFolder':
+       const { folderTitle: videoFolderTitle, folderThumbnail } = req.body;
+       if (!videoFolderTitle || !folderThumbnail) {
+         return res.status(400).json({ 
+           success: false, 
+           message: 'Folder title and thumbnail URL are required for video folder requests' 
+         });
+       }
+       
+       newRequest = new VideoFolderRequest({
+         mentorId,
+         folderTitle: videoFolderTitle,
+         folderThumbnail,
+         status: 'pending',
+         requestDate: new Date()
+       });
+       break;
+
+     case 'video':
+       const { 
+         title: videoTitle, 
+         description: videoDescription, 
+         link, 
+         type, 
+         folderId: videoFolderId,
+         sourceType = 'url'
+       } = req.body;
+       
+       if (!videoTitle || !videoDescription || !type || !videoFolderId) {
+         return res.status(400).json({ 
+           success: false, 
+           message: 'Title, description, type, and folder are required for video requests' 
+         });
+       }
+
+       // For URL videos, link is required. For uploads, file is required.
+       if (sourceType === 'url' && !link) {
+         return res.status(400).json({ 
+           success: false, 
+           message: 'Video link is required for URL-based video requests' 
+         });
+       }
+
+       if (sourceType === 'upload' && !req.file) {
+         return res.status(400).json({ 
+           success: false, 
+           message: 'Video file is required for upload-based video requests' 
+         });
+       }
+       
+       // Validate video folder
+       let validVideoFolder = null;
+       try {
+         const approvedVideoFolderRequest = await VideoFolderRequest.findOne({
+           _id: videoFolderId,
+           mentorId: mentorId,
+           status: 'approved'
+         });
+         if (approvedVideoFolderRequest) {
+           validVideoFolder = approvedVideoFolderRequest;
+           console.log('✅ Found approved VideoFolderRequest:', approvedVideoFolderRequest._id);
+         }
+       } catch (error) {
+         console.log('Error checking video folder request:', error.message);
+       }
+       
+       if (!validVideoFolder && VideoFolder.findOne) {
+         try {
+           // Check for existing video folders created by this mentor
+           const existingVideoFolder = await VideoFolder.findOne({
+             _id: videoFolderId,
+             createdBy: mentorId
+           });
+           if (existingVideoFolder) {
+             validVideoFolder = existingVideoFolder;
+             console.log('✅ Found existing VideoFolder:', existingVideoFolder._id);
+           }
+         } catch (error) {
+           console.log('Error checking existing video folder:', error.message);
+         }
+       }
+       
+       if (!validVideoFolder) {
+         console.log('❌ Video folder validation failed for:', {
+           videoFolderId,
+           mentorId,
+           message: 'Folder not found or not accessible to this mentor'
+         });
+         return res.status(400).json({ 
+           success: false, 
+           message: 'Selected video folder does not exist or is not accessible. Please ensure the folder is approved or created by you.' 
+         });
+       }
+
+       const videoData = {
+         mentorId,
+         title: videoTitle,
+         description: videoDescription,
+         type,
+         folderId: videoFolderId,
+         sourceType,
+         status: 'pending',
+         requestDate: new Date()
+       };
+
+       // Add URL or file data based on source type
+       if (sourceType === 'url') {
+         videoData.link = link;
+       } else if (sourceType === 'upload' && req.file) {
+         videoData.videoFile = {
+           data: req.file.buffer,
+           contentType: req.file.mimetype,
+           filename: `${Date.now()}_${req.file.originalname}`,
+           originalName: req.file.originalname,
+           size: req.file.size,
+           uploadDate: new Date()
+         };
+       }
+       
+       newRequest = new VideoRequest(videoData);
+       break;
+       
+     default:
+       return res.status(400).json({ 
+         success: false, 
+         message: 'Invalid request type' 
+       });
+   }
+
+   console.log('💾 Saving request...');
+   const savedRequest = await newRequest.save();
+   
+   console.log('✅ Request created successfully:', savedRequest._id);
+   
+   res.status(201).json({
+     success: true,
+     message: 'Request submitted successfully',
+     request: {
+       ...savedRequest.toObject(),
+       requestType
+     }
+   });
+
+ } catch (error) {
+   console.error('❌ Error creating request:', error);
+   
+   if (error.code === 'LIMIT_FILE_SIZE') {
+     return res.status(400).json({ 
+       success: false, 
+       message: 'File size too large. Maximum size is 100MB.' 
+     });
+   }
+   
+   if (error.message.includes('Only PDF files are allowed')) {
+     return res.status(400).json({ 
+       success: false, 
+       message: 'Only PDF files are allowed for PDF requests.' 
+     });
+   }
+
+   if (error.message.includes('Only video files are allowed')) {
+     return res.status(400).json({ 
+       success: false, 
+       message: 'Only video files are allowed for video upload requests.' 
+     });
+   }
+   
+   res.status(500).json({ 
+     success: false, 
+     message: error.message || 'An error occurred while creating the request'
+   });
+ }
+});
+
+// DOWNLOAD PDF FILE
+router.get('/download/pdf/:requestId', async (req, res) => {
   try {
-    console.log('📝 Creating new request...');
-    console.log('Request body:', req.body);
-    console.log('Request file:', req.file ? { name: req.file.originalname, size: req.file.size } : null);
-    
-    const { requestType, mentorId } = req.body;
-    
-    // Validate required fields
-    if (!requestType || !mentorId) {
-      console.log('❌ Missing required fields');
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Request type and mentor ID are required' 
-      });
+    const { requestId } = req.params;
+    const { view } = req.query; // <-- Add this line
+
+    if (!/^[0-9a-fA-F]{24}$/.test(requestId)) {
+      return res.status(400).json({ error: 'Invalid request ID' });
     }
 
-    // Validate mentorId format
-    if (!/^[0-9a-fA-F]{24}$/.test(mentorId)) {
-      console.log('❌ Invalid mentor ID format:', mentorId);
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid mentor ID format' 
-      });
+    const pdfRequest = await PDFRequest.findById(requestId);
+
+    if (!pdfRequest || !pdfRequest.pdf || !pdfRequest.pdf.data) {
+      return res.status(404).json({ error: 'PDF file not found' });
     }
 
-    // Check if models are available
-    if (!ItemRequest || !FolderRequest || !PDFRequest || !VideoFolderRequest || !VideoRequest) {
-      console.log('❌ Models not properly loaded');
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Database models not available' 
-      });
-    }
-
-    let newRequest;
-
-    switch (requestType) {
-      case 'item':
-        const { title, hyperlink, description } = req.body;
-        if (!title || !hyperlink || !description) {
-          return res.status(400).json({ 
-            success: false, 
-            message: 'Title, hyperlink, and description are required for item requests' 
-          });
-        }
-        
-        newRequest = new ItemRequest({
-          mentorId,
-          title,
-          hyperlink,
-          description,
-          status: 'pending',
-          requestDate: new Date()
-        });
-        break;
-
-      case 'folder':
-        const { folderTitle } = req.body;
-        if (!folderTitle) {
-          return res.status(400).json({ 
-            success: false, 
-            message: 'Folder title is required for folder requests' 
-          });
-        }
-        
-        newRequest = new FolderRequest({
-          mentorId,
-          folderTitle,
-          status: 'pending',
-          requestDate: new Date()
-        });
-        break;
-
-      case 'pdf':
-        const { title: pdfTitle, folderId } = req.body;
-        if (!folderId || !req.file) {
-          return res.status(400).json({ 
-            success: false, 
-            message: 'Folder ID and PDF file are required for PDF requests' 
-          });
-        }
-        
-        // Check if folderId corresponds to an approved folder request by this mentor
-        let validFolder = null;
-        
-        try {
-          const approvedFolderRequest = await FolderRequest.findOne({
-            _id: folderId,
-            mentorId: mentorId,
-            status: 'approved'
-          });
-          validFolder = approvedFolderRequest;
-        } catch (error) {
-          console.log('Error checking folder request:', error.message);
-        }
-        
-        // Also check existing folders (if available)
-        if (!validFolder && Folder.findOne) {
-          try {
-            const existingFolder = await Folder.findOne({
-              _id: folderId,
-              createdBy: mentorId // Adjust this field name as needed
-            });
-            validFolder = existingFolder;
-          } catch (error) {
-            console.log('Error checking existing folder:', error.message);
-          }
-        }
-        
-        if (!validFolder) {
-          return res.status(400).json({ 
-            success: false, 
-            message: 'Selected folder does not exist or is not approved' 
-          });
-        }
-        
-        newRequest = new PDFRequest({
-          mentorId,
-          title: pdfTitle || req.file.originalname.replace('.pdf', ''),
-          folderId,
-          pdf: {
-            data: req.file.buffer,
-            contentType: req.file.mimetype
-          },
-          status: 'pending',
-          requestDate: new Date()
-        });
-        break;
-
-      case 'videoFolder':
-        const { folderTitle: videoFolderTitle, folderThumbnail } = req.body;
-        if (!videoFolderTitle || !folderThumbnail) {
-          return res.status(400).json({ 
-            success: false, 
-            message: 'Folder title and thumbnail URL are required for video folder requests' 
-          });
-        }
-        
-        newRequest = new VideoFolderRequest({
-          mentorId,
-          folderTitle: videoFolderTitle,
-          folderThumbnail,
-          status: 'pending',
-          requestDate: new Date()
-        });
-        break;
-
-      case 'video':
-        const { title: videoTitle, description: videoDescription, link, type, folderId: videoFolderId } = req.body;
-        if (!videoTitle || !videoDescription || !link || !type || !videoFolderId) {
-          return res.status(400).json({ 
-            success: false, 
-            message: 'All fields are required for video requests' 
-          });
-        }
-        
-        // Check if the video folder ID corresponds to an approved video folder request
-        let validVideoFolder = null;
-        
-        try {
-          const approvedVideoFolderRequest = await VideoFolderRequest.findOne({
-            _id: videoFolderId,
-            mentorId: mentorId,
-            status: 'approved'
-          });
-          validVideoFolder = approvedVideoFolderRequest;
-        } catch (error) {
-          console.log('Error checking video folder request:', error.message);
-        }
-        
-        if (!validVideoFolder && VideoFolder.findOne) {
-          try {
-            const existingVideoFolder = await VideoFolder.findOne({
-              _id: videoFolderId,
-              createdBy: mentorId
-            });
-            validVideoFolder = existingVideoFolder;
-          } catch (error) {
-            console.log('Error checking existing video folder:', error.message);
-          }
-        }
-        
-        if (!validVideoFolder) {
-          return res.status(400).json({ 
-            success: false, 
-            message: 'Selected video folder does not exist or is not approved. Please create a video folder request first and wait for approval.' 
-          });
-        }
-        
-        newRequest = new VideoRequest({
-          mentorId,
-          title: videoTitle,
-          description: videoDescription,
-          link,
-          type,
-          folderId: videoFolderId,
-          status: 'pending',
-          requestDate: new Date()
-        });
-        break;
-        
-      default:
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Invalid request type' 
-        });
-    }
-
-    // Save the request
-    console.log('💾 Saving request...');
-    const savedRequest = await newRequest.save();
-    
-    console.log('✅ Request created successfully:', savedRequest._id);
-    
-    res.status(201).json({
-      success: true,
-      message: 'Request submitted successfully',
-      request: {
-        ...savedRequest.toObject(),
-        requestType
-      }
+    res.set({
+      'Content-Type': pdfRequest.pdf.contentType,
+      'Content-Disposition': `${view ? 'inline' : 'attachment'}; filename="${pdfRequest.pdf.originalName}"`,
+      'Content-Length': pdfRequest.pdf.size
     });
+
+    res.send(pdfRequest.pdf.data);
 
   } catch (error) {
-    console.error('❌ Error creating request:', error);
+    console.error('❌ Error downloading PDF:', error);
+    res.status(500).json({ error: 'Error downloading file' });
+  }
+});
+
+// STREAM VIDEO FILE
+router.get('/stream/video/:requestId', async (req, res) => {
+  try {
+    const { requestId } = req.params;
     
-    // Handle multer errors
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'File size too large. Maximum size is 10MB.' 
+    if (!/^[0-9a-fA-F]{24}$/.test(requestId)) {
+      return res.status(400).json({ error: 'Invalid request ID' });
+    }
+
+    const videoRequest = await VideoRequest.findById(requestId);
+    
+    if (!videoRequest || !videoRequest.videoFile || !videoRequest.videoFile.data) {
+      return res.status(404).json({ error: 'Video file not found' });
+    }
+
+    const range = req.headers.range;
+    const videoSize = videoRequest.videoFile.size;
+    const videoData = videoRequest.videoFile.data;
+
+    if (range) {
+      // Support for video streaming with range requests
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : videoSize - 1;
+      const chunksize = (end - start) + 1;
+      
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${videoSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunksize,
+        'Content-Type': videoRequest.videoFile.contentType,
       });
+      
+      res.end(videoData.slice(start, end + 1));
+    } else {
+      res.writeHead(200, {
+        'Content-Length': videoSize,
+        'Content-Type': videoRequest.videoFile.contentType,
+      });
+      res.end(videoData);
     }
     
-    if (error.message === 'Only PDF files are allowed') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Only PDF files are allowed for PDF requests.' 
-      });
-    }
-    
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'An error occurred while creating the request',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+  } catch (error) {
+    console.error('❌ Error streaming video:', error);
+    res.status(500).json({ error: 'Error streaming video' });
   }
 });
 
@@ -412,34 +556,26 @@ router.get('/approved-folders/:mentorId', async (req, res) => {
   try {
     const { mentorId } = req.params;
     
-    console.log('📁 Fetching approved folders for mentor:', mentorId);
-    
     if (!mentorId || !/^[0-9a-fA-F]{24}$/.test(mentorId)) {
       return res.status(400).json({ error: 'Valid mentor ID is required' });
     }
     
-    // Find approved folder requests by this mentor
     const approvedFolderRequests = await FolderRequest.find({ 
       mentorId, 
       status: 'approved' 
     }).select('folderTitle _id');
     
-    console.log('✅ Found', approvedFolderRequests.length, 'approved folder requests');
-    
-    // Also get existing folders created by this mentor (if any)
     let existingFolders = [];
     if (Folder && Folder.find) {
       try {
         existingFolders = await Folder.find({ 
-          createdBy: mentorId // Adjust field name as needed
+          createdBy: mentorId
         }).select('title _id');
-        console.log('✅ Found', existingFolders.length, 'existing folders');
       } catch (error) {
         console.log('❌ Error fetching existing folders:', error.message);
       }
     }
     
-    // Combine both sources
     const folders = [
       ...approvedFolderRequests.map(req => ({ 
         _id: req._id, 
@@ -453,12 +589,15 @@ router.get('/approved-folders/:mentorId', async (req, res) => {
       }))
     ];
     
-    console.log('📋 Returning', folders.length, 'total folders');
-    res.json({ folders });
+    res.json({ 
+      success: true,
+      folders 
+    });
     
   } catch (error) {
     console.error('❌ Error fetching approved folders:', error);
     res.status(500).json({ 
+      success: false,
       error: 'Internal server error',
       message: error.message 
     });
@@ -470,39 +609,31 @@ router.get('/approved-video-folders/:mentorId', async (req, res) => {
   try {
     const { mentorId } = req.params;
     
-    console.log('🎥 Fetching approved video folders for mentor:', mentorId);
-    
     if (!mentorId || !/^[0-9a-fA-F]{24}$/.test(mentorId)) {
       return res.status(400).json({ error: 'Valid mentor ID is required' });
     }
     
-    // Find approved video folder requests by this mentor
     const approvedVideoFolderRequests = await VideoFolderRequest.find({ 
       mentorId, 
       status: 'approved' 
     }).select('folderTitle _id');
     
-    console.log('✅ Found', approvedVideoFolderRequests.length, 'approved video folder requests');
-    
-    // Also get existing video folders created by this mentor (if any)
     let existingVideoFolders = [];
     if (VideoFolder && VideoFolder.find) {
       try {
         existingVideoFolders = await VideoFolder.find({ 
-          createdBy: mentorId // Adjust field name as needed
+          createdBy: mentorId
         }).select('folderTitle _id');
-        console.log('✅ Found', existingVideoFolders.length, 'existing video folders');
       } catch (error) {
         console.log('❌ Error fetching existing video folders:', error.message);
       }
     }
     
-    // Combine both sources
     const folders = [
       ...approvedVideoFolderRequests.map(req => ({ 
         _id: req._id, 
         folderTitle: req.folderTitle,
-        source: 'request'
+        source: 'request'  
       })),
       ...existingVideoFolders.map(folder => ({ 
         _id: folder._id, 
@@ -511,12 +642,15 @@ router.get('/approved-video-folders/:mentorId', async (req, res) => {
       }))
     ];
     
-    console.log('📋 Returning', folders.length, 'total video folders');
-    res.json({ folders });
+    res.json({ 
+      success: true,
+      folders 
+    });
     
   } catch (error) {
     console.error('❌ Error fetching approved video folders:', error);
     res.status(500).json({ 
+      success: false,
       error: 'Internal server error',
       message: error.message 
     });
