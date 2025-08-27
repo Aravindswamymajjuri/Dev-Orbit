@@ -8,7 +8,6 @@ import {
   X, 
   Download,
   Play,
-  Calendar,
   Filter,
   Plus,
   AlertCircle,
@@ -16,6 +15,8 @@ import {
   Clock,
   XCircle
 } from 'lucide-react';
+
+import '../mentorresouces/mentorresources.css';
 
 const MentorResourcesDashboard = () => {
   const [requests, setRequests] = useState([]);
@@ -30,11 +31,9 @@ const MentorResourcesDashboard = () => {
   const [requestCounts, setRequestCounts] = useState({});
   const [pdfModalUrl, setPdfModalUrl] = useState(null);
 
-
-  // Authentication - replace with your auth system
   const mentorId = localStorage.getItem('mentorId') || localStorage.getItem('mentor');
   const token = localStorage.getItem('token');
-  const API_BASE = 'http://localhost:5000/mentorresources'; // Update with your backend URL
+  const API_BASE = 'http://localhost:5000/mentorresources';
 
   const [formData, setFormData] = useState({
     requestType: 'item',
@@ -49,7 +48,6 @@ const MentorResourcesDashboard = () => {
     sourceType: 'url'
   });
 
-  // Clear messages after timeout
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => setError(''), 5000);
@@ -64,7 +62,6 @@ const MentorResourcesDashboard = () => {
     }
   }, [success]);
 
-  // Fetch approved folders for PDFs
   const fetchAvailableFolders = async () => {
     if (!mentorId || mentorId.length !== 24) { 
       setAvailableFolders([]); 
@@ -87,7 +84,6 @@ const MentorResourcesDashboard = () => {
     }
   };
 
-  // Fetch approved video folders for videos
   const fetchAvailableVideoFolders = async () => {
     if (!mentorId || mentorId.length !== 24) { 
       setAvailableVideoFolders([]); 
@@ -110,7 +106,6 @@ const MentorResourcesDashboard = () => {
     }
   };
 
-  // Fetch all mentor's requests
   const fetchRequests = async () => {
     if (!mentorId || mentorId.length !== 24) { 
       setRequests([]); 
@@ -131,8 +126,6 @@ const MentorResourcesDashboard = () => {
       if (data.success) {
         setRequests(data.requests || []);
         setRequestCounts(data.counts || {});
-        console.log(data)
-          console.log("request",requestCounts)
       } else {
         throw new Error(data.message || 'Failed to fetch requests');
       }
@@ -145,11 +138,9 @@ const MentorResourcesDashboard = () => {
     }
   };
 
-  // Handle file selection
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Validate file type based on request type
       if (formData.requestType === 'pdf' && file.type !== 'application/pdf') {
         setError('Please select a PDF file only.');
         return;
@@ -158,7 +149,6 @@ const MentorResourcesDashboard = () => {
         setError('Please select a video file only.');
         return;
       }
-      // Check file size (100MB limit)
       if (file.size > 100 * 1024 * 1024) {
         setError('File size must be less than 100MB.');
         return;
@@ -172,12 +162,10 @@ const MentorResourcesDashboard = () => {
     setSelectedFile(null);
   };
 
-  // Handle form field changes
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     
-    // Reset form when request type changes
     if (name === 'requestType') {
       setFormData({
         requestType: value,
@@ -194,14 +182,11 @@ const MentorResourcesDashboard = () => {
       setSelectedFile(null);
       setError('');
     }
-    
-    // Reset file when source type changes for video
     if (name === 'sourceType') {
       setSelectedFile(null);
     }
   };
 
-  // Validate form data before submission
   const validateForm = () => {
     const { requestType } = formData;
     
@@ -256,7 +241,6 @@ const MentorResourcesDashboard = () => {
     return true;
   };
 
-  // Create new request
   const createRequest = async (e) => {
     e.preventDefault();
     setError('');
@@ -276,7 +260,6 @@ const MentorResourcesDashboard = () => {
     try {
       const formDataToSend = new FormData();
       
-      // Add all non-empty form fields
       Object.entries(formData).forEach(([key, value]) => {
         if (value) {
           formDataToSend.append(key, value);
@@ -285,7 +268,6 @@ const MentorResourcesDashboard = () => {
       
       formDataToSend.append('mentorId', mentorId);
       
-      // Add file if present
       if (selectedFile) {
         formDataToSend.append('file', selectedFile);
       }
@@ -333,7 +315,6 @@ const MentorResourcesDashboard = () => {
     }
   };
 
-  // Download PDF file
   const downloadPDF = async (requestId, filename) => {
     try {
       const response = await fetch(`${API_BASE}/download/pdf/${requestId}`, {
@@ -358,8 +339,7 @@ const MentorResourcesDashboard = () => {
     }
   };
 
-  // Helper functions for file URLs
-  const getBackendUrl = () => 'http://localhost:5000'; // Or use config if available
+  const getBackendUrl = () => 'http://localhost:5000';
 
   const getPDFDownloadUrl = (requestId, view = false) =>
     `${getBackendUrl()}/mentorresources/download/pdf/${requestId}${view ? '?view=1' : ''}`;
@@ -367,7 +347,6 @@ const MentorResourcesDashboard = () => {
   const getVideoStreamUrl = (requestId) =>
     `${getBackendUrl()}/mentorresources/stream/video/${requestId}`;
 
-  // Initialize data
   useEffect(() => { 
     fetchRequests(); 
   }, []);
@@ -381,25 +360,22 @@ const MentorResourcesDashboard = () => {
     }
   }, [formData.requestType]);
 
-  // Filter requests
   const filteredRequests = requests.filter(req => {
     return (filters.type === 'all' || req.requestType === filters.type) &&
            (filters.status === 'all' || req.status === filters.status);
   });
 
-  // Get status icon and color
   const getStatusDisplay = (status) => {
     switch (status) {
       case 'approved':
-        return { icon: <CheckCircle size={16} />, color: 'text-green-600', bg: 'bg-green-50' };
+        return { icon: <CheckCircle size={16} />, className: 'status-approved' };
       case 'rejected':
-        return { icon: <XCircle size={16} />, color: 'text-red-600', bg: 'bg-red-50' };
+        return { icon: <XCircle size={16} />, className: 'status-rejected' };
       default:
-        return { icon: <Clock size={16} />, color: 'text-yellow-600', bg: 'bg-yellow-50' };
+        return { icon: <Clock size={16} />, className: 'status-pending' };
     }
   };
 
-  // Get request type icon
   const getTypeIcon = (type) => {
     switch (type) {
       case 'item': return <LinkIcon size={16} />;
@@ -411,18 +387,17 @@ const MentorResourcesDashboard = () => {
     }
   };
 
-  // Render form fields based on request type
   const renderFormFields = () => {
     switch (formData.requestType) {
       case 'item':
         return (
-          <div className="space-y-4">
+          <div className="form-group">
             <input 
               name="title" 
               value={formData.title} 
               onChange={handleChange} 
               placeholder="Item Title*" 
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-text"
               required 
             />
             <input 
@@ -431,7 +406,7 @@ const MentorResourcesDashboard = () => {
               onChange={handleChange} 
               placeholder="Item URL*" 
               type="url"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-url"
               required 
             />
             <textarea 
@@ -440,38 +415,40 @@ const MentorResourcesDashboard = () => {
               onChange={handleChange} 
               placeholder="Description*" 
               rows="3"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="textarea"
               required 
             />
           </div>
         );
       case 'folder':
         return (
-          <input 
-            name="folderTitle" 
-            value={formData.folderTitle} 
-            onChange={handleChange} 
-            placeholder="Folder Title*" 
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            required 
-          />
+          <div className="form-group">
+            <input 
+              name="folderTitle" 
+              value={formData.folderTitle} 
+              onChange={handleChange} 
+              placeholder="Folder Title*" 
+              className="input-text"
+              required 
+            />
+          </div>
         );
       case 'pdf':
         return (
-          <div className="space-y-4">
+          <div className="form-group">
             <input 
               name="title" 
               value={formData.title} 
               onChange={handleChange} 
               placeholder="PDF Title*" 
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-text"
               required 
             />
             <select 
               name="folderId" 
               value={formData.folderId} 
               onChange={handleChange} 
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-select"
               required
             >
               <option value="">Select Folder*</option>
@@ -482,34 +459,35 @@ const MentorResourcesDashboard = () => {
               ))}
             </select>
             {availableFolders.length === 0 && (
-              <p className="text-orange-600 text-sm bg-orange-50 p-2 rounded">
+              <p style={{ color: '#c2410c', fontSize: '0.875rem', background: '#fef3c7', padding: '8px', borderRadius: '8px' }}>
                 No folders available. Create a folder request first.
               </p>
             )}
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+            <div 
+              className="file-upload-container"
+              onClick={() => document.getElementById('pdf-upload').click()}
+            >
+              <Upload size={48} />
+              <div>Click to upload PDF file*</div>
               <input 
                 type="file" 
                 accept="application/pdf" 
-                onChange={handleFileSelect}
-                className="hidden"
-                id="pdf-upload"
+                onChange={handleFileSelect} 
+                id="pdf-upload" 
+                style={{ display: 'none' }} 
                 required 
               />
-              <label htmlFor="pdf-upload" className="cursor-pointer flex flex-col items-center">
-                <Upload className="w-12 h-12 text-gray-400 mb-2" />
-                <span className="text-sm text-gray-600">Click to upload PDF file*</span>
-              </label>
             </div>
             {selectedFile && (
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <FileText size={20} className="text-blue-600" />
-                  <span className="text-sm">{selectedFile.name}</span>
-                  <span className="text-xs text-gray-500">
+              <div className="file-info">
+                <div className="file-info-text">
+                  <FileText size={20} />
+                  <span>{selectedFile.name}</span>
+                  <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
                     ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
                   </span>
                 </div>
-                <button type="button" onClick={removeFile} className="text-red-500 hover:text-red-700">
+                <button type="button" onClick={removeFile} className="btn-remove-file">
                   <X size={16} />
                 </button>
               </div>
@@ -518,13 +496,13 @@ const MentorResourcesDashboard = () => {
         );
       case 'videoFolder':
         return (
-          <div className="space-y-4">
+          <div className="form-group">
             <input 
               name="folderTitle" 
               value={formData.folderTitle} 
               onChange={handleChange} 
               placeholder="Video Folder Title*" 
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-text"
               required 
             />
             <input 
@@ -533,20 +511,20 @@ const MentorResourcesDashboard = () => {
               onChange={handleChange} 
               placeholder="Thumbnail URL*" 
               type="url"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-url"
               required 
             />
           </div>
         );
       case 'video':
         return (
-          <div className="space-y-4">
+          <div className="form-group">
             <input 
               name="title" 
               value={formData.title} 
               onChange={handleChange} 
               placeholder="Video Title*" 
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-text"
               required 
             />
             <textarea 
@@ -555,14 +533,14 @@ const MentorResourcesDashboard = () => {
               onChange={handleChange} 
               placeholder="Video Description*" 
               rows="3"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="textarea"
               required 
             />
             <select 
               name="folderId" 
               value={formData.folderId} 
               onChange={handleChange} 
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-select"
               required
             >
               <option value="">Select Video Folder*</option>
@@ -573,30 +551,28 @@ const MentorResourcesDashboard = () => {
               ))}
             </select>
             {availableVideoFolders.length === 0 && (
-              <p className="text-orange-600 text-sm bg-orange-50 p-2 rounded">
+              <p style={{ color: '#c2410c', fontSize: '0.875rem', background: '#fef3c7', padding: '8px', borderRadius: '8px' }}>
                 No video folders available. Create a video folder request first and wait for approval.
               </p>
             )}
-            <div className="flex gap-4">
-              <label className="flex items-center">
+            <div style={{ display: 'flex', gap: '32px', margin: '16px 0' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <input 
                   type="radio" 
                   name="sourceType" 
                   value="url" 
                   checked={formData.sourceType === 'url'}
                   onChange={handleChange}
-                  className="mr-2"
                 />
                 URL Link
               </label>
-              <label className="flex items-center">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <input 
                   type="radio" 
                   name="sourceType" 
                   value="upload" 
                   checked={formData.sourceType === 'upload'}
                   onChange={handleChange}
-                  className="mr-2"
                 />
                 File Upload
               </label>
@@ -608,36 +584,37 @@ const MentorResourcesDashboard = () => {
                 onChange={handleChange} 
                 placeholder="Video URL*" 
                 type="url"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="input-url"
                 required 
               />
             ) : (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+              <div 
+                className="file-upload-container"
+                onClick={() => document.getElementById('video-upload').click()}
+              >
+                <Upload size={48} />
+                <div>Click to upload video file*</div>
+                <small style={{ color: '#6b7280' }}>Max size: 100MB</small>
                 <input 
                   type="file" 
                   accept="video/*" 
                   onChange={handleFileSelect}
-                  className="hidden"
                   id="video-upload"
+                  style={{ display: 'none' }}
                   required 
                 />
-                <label htmlFor="video-upload" className="cursor-pointer flex flex-col items-center">
-                  <Upload className="w-12 h-12 text-gray-400 mb-2" />
-                  <span className="text-sm text-gray-600">Click to upload video file*</span>
-                  <span className="text-xs text-gray-500">Max size: 100MB</span>
-                </label>
               </div>
             )}
             {selectedFile && formData.sourceType === 'upload' && (
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Video size={20} className="text-blue-600" />
-                  <span className="text-sm">{selectedFile.name}</span>
-                  <span className="text-xs text-gray-500">
+              <div className="file-info">
+                <div className="file-info-text">
+                  <Video size={20} />
+                  <span>{selectedFile.name}</span>
+                  <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
                     ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
                   </span>
                 </div>
-                <button type="button" onClick={removeFile} className="text-red-500 hover:text-red-700">
+                <button type="button" onClick={removeFile} className="btn-remove-file">
                   <X size={16} />
                 </button>
               </div>
@@ -646,7 +623,7 @@ const MentorResourcesDashboard = () => {
               name="type" 
               value={formData.type} 
               onChange={handleChange} 
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-select"
               required
             >
               <option value="">Select Video Type*</option>
@@ -662,7 +639,6 @@ const MentorResourcesDashboard = () => {
     }
   };
 
-  // Helper: Get only approved uploaded PDFs/videos
   const myUploadedPDFs = requests.filter(
     req => req.requestType === 'pdf' && req.status === 'approved'
   );
@@ -670,84 +646,102 @@ const MentorResourcesDashboard = () => {
     req => req.requestType === 'video' && req.status === 'approved' && req.sourceType === 'upload'
   );
 
-  // Debug: Log all video requests
-  // Remove or comment this out in production
   useEffect(() => {
     const videoReqs = requests.filter(req => req.requestType === 'video');
     console.log('Video requests:', videoReqs);
   }, [requests]);
 
   return (
-    <div className="max-w-6xl mx-auto p-6 bg-gray-50 min-h-screen">
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Mentor Resource Requests</h1>
+    <div className="mentor-resources-container">
+      <div className="mentorresource-card">
+        <div className="header-flex">
+          <h1 className="header-title">Mentor Resource Requests</h1>
           <button 
             onClick={() => setShowCreateForm(true)} 
             disabled={loading}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="btn-primary"
           >
             <Plus size={20} />
             New Request
           </button>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600">{requestCounts.total || 0}</div>
-            <div className="text-sm text-blue-600">Total</div>
+        <div className="stats-grid">
+          <div 
+            className="stat-card stat-total" 
+            onClick={() => setFilters({ type: 'all', status: 'all' })}
+            style={{ cursor: 'pointer' }}
+          >
+            {requestCounts.total || 0}
+            <div>Total</div>
           </div>
-          <div className="bg-green-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-green-600">{requestCounts.items || 0}</div>
-            <div className="text-sm text-green-600">Items</div>
+          <div 
+            className="stat-card stat-items" 
+            onClick={() => setFilters({ type: 'item', status: 'all' })}
+            style={{ cursor: 'pointer' }}
+          >
+            {requestCounts.items || 0}
+            <div>Items</div>
           </div>
-          <div className="bg-purple-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-purple-600">{requestCounts.folders || 0}</div>
-            <div className="text-sm text-purple-600">Folders</div>
+          <div 
+            className="stat-card stat-folders" 
+            onClick={() => setFilters({ type: 'folder', status: 'all' })}
+            style={{ cursor: 'pointer' }}
+          >
+            {requestCounts.folders || 0}
+            <div>Folders</div>
           </div>
-          <div className="bg-red-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-red-600">{requestCounts.pdfs || 0}</div>
-            <div className="text-sm text-red-600">PDFs</div>
+          <div 
+            className="stat-card stat-pdfs" 
+            onClick={() => setFilters({ type: 'pdf', status: 'all' })} 
+            style={{ cursor: 'pointer' }}
+          >
+            {requestCounts.pdfs || 0}
+            <div>PDFs</div>
           </div>
-          <div className="bg-yellow-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-yellow-600">{requestCounts.videoFolders || 0}</div>
-            <div className="text-sm text-yellow-600">Video Folders</div>
+          <div 
+            className="stat-card stat-videoFolders" 
+            onClick={() => setFilters({ type: 'videoFolder', status: 'all' })} 
+            style={{ cursor: 'pointer' }}
+          >
+            {requestCounts.videoFolders || 0}
+            <div>Video Folders</div>
           </div>
-          <div className="bg-indigo-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-indigo-600">{requestCounts.videos || requests.filter(r => r.requestType === 'video').length}</div>
-            <div className="text-sm text-indigo-600">Videos</div>
+          <div 
+            className="stat-card stat-videos" 
+            onClick={() => setFilters({ type: 'video', status: 'all' })} 
+            style={{ cursor: 'pointer' }}
+          >
+            {requestCounts.videos || requests.filter(r => r.requestType === 'video').length}
+            <div>Videos</div>
           </div>
         </div>
       </div>
 
-      {/* Alert Messages */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-center gap-2">
+        <div className="message-error">
           <AlertCircle size={20} />
           <span>{error}</span>
         </div>
       )}
-
       {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 flex items-center gap-2">
+        <div className="message-success">
           <CheckCircle size={20} />
           <span>{success}</span>
         </div>
       )}
 
-      {/* Create Request Form */}
       {showCreateForm && (
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Create New Request</h2>
-          <form onSubmit={createRequest} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Request Type</label>
+        <div className="mentorresource-card">
+          <h2 className="header-title" style={{ fontSize: '1.25rem', marginBottom: '16px' }}>Create New Request</h2>
+          <form onSubmit={createRequest} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div className="form-group">
+              <label>Request Type</label>
               <select 
                 name="requestType" 
                 value={formData.requestType} 
                 onChange={handleChange}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="input-select"
               >
                 <option value="item">📄 Item Request</option>
                 <option value="folder">📁 Folder Request</option>
@@ -756,18 +750,21 @@ const MentorResourcesDashboard = () => {
                 <option value="video">🎥 Video Request</option>
               </select>
             </div>
-            
+
             {renderFormFields()}
-            
-            <div className="flex gap-3 pt-4">
-              <button 
-                type="submit" 
-                disabled={loading}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
-              >
+
+            <div style={{ display: 'flex', gap: '12px',flexDirection :'column' }}>
+              <button type="submit" disabled={loading} className="btn-primary">
                 {loading ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <div style={{
+                      width: 16,
+                      height: 16,
+                      border: '3px solid white',
+                      borderTopColor: 'transparent',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }}></div>
                     Submitting...
                   </>
                 ) : (
@@ -783,7 +780,15 @@ const MentorResourcesDashboard = () => {
                   setSelectedFile(null);
                 }}
                 disabled={loading}
-                className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 disabled:opacity-50 transition-colors"
+                style={{
+                  backgroundColor: '#6B7280',
+                  color: 'white',
+                  borderRadius: '8px',
+                  padding: '10px 16px',
+                  cursor: loading ? 'default' : 'pointer',
+                  opacity: loading ? 0.5 : 1,
+                  border: 'none'
+                }}
               >
                 Cancel
               </button>
@@ -792,16 +797,16 @@ const MentorResourcesDashboard = () => {
         </div>
       )}
 
-      {/* Requests List */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">My Requests</h2>
-          <div className="flex items-center gap-3">
-            <Filter size={16} className="text-gray-400" />
+      <div className="mentorresource-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={{ fontWeight: 600, fontSize: '1.25rem', color: '#111827' }}>My Requests</h2>
+
+          <div className="filter-group">
+            <Filter size={16} style={{ color: '#9ca3af' }} />
             <select 
               value={filters.type} 
               onChange={e => setFilters(prev => ({ ...prev, type: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="filter-select"
             >
               <option value="all">All Types</option>
               <option value="item">Items</option>
@@ -810,11 +815,11 @@ const MentorResourcesDashboard = () => {
               <option value="videoFolder">Video Folders</option>
               <option value="video">Videos</option>
             </select>
-            
+
             <select 
               value={filters.status} 
               onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="filter-select"
             >
               <option value="all">All Statuses</option>
               <option value="pending">Pending</option>
@@ -823,68 +828,70 @@ const MentorResourcesDashboard = () => {
             </select>
           </div>
         </div>
-        
+
         {loading && (
-          <div className="flex items-center justify-center py-8">
-            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <div style={{ textAlign: 'center', padding: '32px 0' }}>
+            <div style={{
+              width: 32,
+              height: 32,
+              margin: 'auto',
+              border: '4px solid #2563eb',
+              borderTopColor: 'transparent',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }} />
           </div>
         )}
 
-        {/* Requests Table/List */}
         {!loading && filteredRequests.length === 0 && (
-          <div className="text-center text-gray-500 py-8">
+          <div style={{ textAlign: 'center', color: '#6b7280', padding: '48px 0' }}>
             No requests found.
           </div>
         )}
 
         {!loading && filteredRequests.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table">
               <thead>
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-4 py-2"></th>
+                  <th>Type</th>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th></th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
+              <tbody>
                 {filteredRequests.map(req => {
                   const status = getStatusDisplay(req.status);
                   return (
                     <tr key={req._id}>
-                      <td className="px-4 py-2">{getTypeIcon(req.requestType)}</td>
-                      <td className="px-4 py-2">{req.title || req.folderTitle || '-'}</td>
-                      <td className={`px-4 py-2 ${status.bg} ${status.color} rounded-lg flex items-center gap-1`}>
-                        {status.icon}
-                        <span className="capitalize">{req.status}</span>
-                      </td>
-                      <td className="px-4 py-2">
-                        {req.createdAt ? new Date(req.createdAt).toLocaleDateString() : '-'}
-                      </td>
-                      <td className="px-4 py-2">
-                        {/* Download and View buttons for approved PDFs */}
+                      <td>{getTypeIcon(req.requestType)}</td>
+                      <td>{req.title || req.folderTitle || '-'}</td>
+                      <td><span className={status.className} style={{display:'inline-flex', gap:'4px', alignItems:'center'}}>
+                        {status.icon}{req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+                      </span></td>
+                      <td>{req.createdAt ? new Date(req.createdAt).toLocaleDateString() : '-'}</td>
+                      <td>
                         {req.requestType === 'pdf' && req.status === 'approved' && (
-                          <div className="flex gap-2">
+                          <div style={{ display: 'flex', gap: '12px' }}>
                             <button
-                              className="flex items-center gap-1 text-blue-600 hover:underline"
+                              style={{ color: '#2563eb', cursor: 'pointer', display:'flex', alignItems:'center', gap: '4px' }}
                               onClick={() => downloadPDF(req._id, req.title)}
                             >
                               <Download size={16} /> Download
                             </button>
                             <button
-                              className="flex items-center gap-1 text-green-600 hover:underline"
+                              style={{ color: '#16a34a', cursor: 'pointer', display:'flex', alignItems:'center', gap: '4px' }}
                               onClick={() => setPdfModalUrl(getPDFDownloadUrl(req._id, true))}
                             >
                               <FileText size={16} /> View
                             </button>
                           </div>
                         )}
-                        {/* View button for approved uploaded videos */}
                         {req.requestType === 'video' && req.status === 'approved' && req.sourceType === 'upload' && (
                           <a
-                            className="flex items-center gap-1 text-green-600 hover:underline"
+                            style={{ color: '#16a34a', display:'flex', alignItems:'center', gap: '4px', textDecoration: 'underline' }}
                             href={getVideoStreamUrl(req._id)}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -892,10 +899,9 @@ const MentorResourcesDashboard = () => {
                             <Play size={16} /> View Video
                           </a>
                         )}
-                        {/* View button for approved video links */}
                         {req.requestType === 'video' && req.status === 'approved' && req.sourceType === 'url' && req.link && (
                           <a
-                            className="flex items-center gap-1 text-green-600 hover:underline"
+                            style={{ color: '#16a34a', display:'flex', alignItems:'center', gap: '4px', textDecoration: 'underline' }}
                             href={req.link}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -911,130 +917,101 @@ const MentorResourcesDashboard = () => {
             </table>
           </div>
         )}
-        {/* PDF Modal */}
-        {pdfModalUrl && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0, left: 0, right: 0, bottom: 0,
-              background: 'rgba(0,0,0,0.5)',
-              zIndex: 1000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-            onClick={() => setPdfModalUrl(null)}
-          >
-            <div
-              style={{
-                background: '#fff',
-                borderRadius: 8,
-                padding: 16,
-                maxWidth: '90vw',
-                maxHeight: '90vh',
-                boxShadow: '0 2px 16px rgba(0,0,0,0.2)',
-                position: 'relative'
-              }}
-              onClick={e => e.stopPropagation()}
-            >
-              <button
-                style={{
-                  position: 'absolute',
-                  top: 8,
-                  right: 8,
-                  background: 'transparent',
-                  border: 'none',
-                  fontSize: 24,
-                  cursor: 'pointer'
-                }}
-                onClick={() => setPdfModalUrl(null)}
-                aria-label="Close"
-              >
-                <X size={24} />
-              </button>
-              <iframe
-                src={pdfModalUrl}
-                title="View PDF"
-                width="800px"
-                height="600px"
-                style={{ border: '1px solid #ddd', borderRadius: 8 }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* My Uploaded PDFs */}
-        {myUploadedPDFs.length > 0 && (
-          <div className="mt-10">
-            <h3 className="text-lg font-semibold mb-2">My Uploaded PDFs</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
-                  {myUploadedPDFs.map(pdf => (
-                    <tr key={pdf._id}>
-                      <td className="px-4 py-2">{pdf.title}</td>
-                      <td className="px-4 py-2 flex gap-2">
-                        <button
-                          className="flex items-center gap-1 text-blue-600 hover:underline"
-                          onClick={() => downloadPDF(pdf._id, pdf.title)}
-                        >
-                          <Download size={16} /> Download
-                        </button>
-                        <button
-                          className="flex items-center gap-1 text-green-600 hover:underline"
-                          onClick={() => setPdfModalUrl(getPDFDownloadUrl(pdf._id, true))}
-                        >
-                          <FileText size={16} /> View
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* My Uploaded Videos */}
-        {myUploadedVideos.length > 0 && (
-          <div className="mt-10">
-            <h3 className="text-lg font-semibold mb-2">My Uploaded Videos</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
-                  {myUploadedVideos.map(video => (
-                    <tr key={video._id}>
-                      <td className="px-4 py-2">{video.title}</td>
-                      <td className="px-4 py-2">
-                        <a
-                          className="flex items-center gap-1 text-green-600 hover:underline"
-                          href={getVideoStreamUrl(video._id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <Play size={16} /> View Video
-                        </a>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* PDF Modal */}
+      {pdfModalUrl && (
+        <div className="modal-overlay" onClick={() => setPdfModalUrl(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <button
+              className="modal-close-button"
+              onClick={() => setPdfModalUrl(null)}
+              aria-label="Close"
+            >
+              <X size={24} />
+            </button>
+            <iframe
+              src={pdfModalUrl}
+              title="View PDF"
+              width="800px"
+              height="600px"
+              style={{ border: '1px solid #ddd', borderRadius: '8px' }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Uploaded PDFs */}
+      {myUploadedPDFs.length > 0 && (
+        <div style={{ marginTop: 40 }}>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: 8 }}>My Uploaded PDFs</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {myUploadedPDFs.map(pdf => (
+                  <tr key={pdf._id}>
+                    <td>{pdf.title}</td>
+                    <td style={{ display: 'flex', gap: '12px' }}>
+                      <button
+                        style={{ color: '#2563eb', cursor: 'pointer', display:'flex', alignItems:'center', gap: '4px' }}
+                        onClick={() => downloadPDF(pdf._id, pdf.title)}
+                      >
+                        <Download size={16} /> Download
+                      </button>
+                      <button
+                        style={{ color: '#16a34a', cursor: 'pointer', display:'flex', alignItems:'center', gap: '4px' }}
+                        onClick={() => setPdfModalUrl(getPDFDownloadUrl(pdf._id, true))}
+                      >
+                        <FileText size={16} /> View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Uploaded Videos */}
+      {myUploadedVideos.length > 0 && (
+        <div style={{ marginTop: 40 }}>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: 8 }}>My Uploaded Videos</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {myUploadedVideos.map(video => (
+                  <tr key={video._id}>
+                    <td>{video.title}</td>
+                    <td>
+                      <a
+                        style={{ color: '#16a34a', display:'flex', alignItems:'center', gap: '4px', textDecoration: 'underline' }}
+                        href={getVideoStreamUrl(video._id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Play size={16} /> View Video
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
