@@ -7,6 +7,7 @@ import config from '../../config'; // Adjust the path as necessary
 
 const AdminApprovalDashboard = () => {
   const [requests, setRequests] = useState([]);
+  const [allRequests, setAllRequests] = useState([]); // Store all requests for stats calculation
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ type: 'all', status: 'pending' });
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,6 +42,23 @@ const AdminApprovalDashboard = () => {
     try {
       setLoading(true);
       setError('');
+
+      // Always fetch all requests for stats calculation
+      const allResponse = await fetch(`${API_BASE}/all`);
+      if (!allResponse.ok) {
+        const errorText = await allResponse.text();
+        throw new Error(`HTTP error! status: ${allResponse.status}, message: ${errorText}`);
+      }
+      const allData = await allResponse.json();
+      const allRequestsWithType = Array.isArray(allData) ? allData.map(request => {
+        const requestType = determineRequestType(request);
+        return { ...request, requestType };
+      }) : [];
+      
+      setAllRequests(allRequestsWithType);
+      calculateStats(allRequestsWithType);
+
+      // Now fetch filtered requests for display
       const params = new URLSearchParams();
       if (filter.type !== 'all') params.append('type', filter.type);
       if (filter.status !== 'all') params.append('status', filter.status);
@@ -61,26 +79,36 @@ const AdminApprovalDashboard = () => {
         const requestType = determineRequestType(request);
         return { ...request, requestType };
       }) : [];
+      
       console.log('Fetched requests:', requestsWithType);
       setRequests(requestsWithType);
-      calculateStats(requestsWithType);
+      
     } catch (error) {
       console.error('Error fetching requests:', error);
       setError(`Failed to fetch requests: ${error.message}`);
       setRequests([]);
+      setAllRequests([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Calculate statistics
-  const calculateStats = (requestsData) => {
-    const newStats = requestsData.reduce((acc, request) => {
+  // Calculate statistics based on ALL data (not filtered)
+  const calculateStats = (allRequestsData) => {
+    const newStats = allRequestsData.reduce((acc, request) => {
       acc[request.status] = (acc[request.status] || 0) + 1;
       acc.total += 1;
       return acc;
     }, { pending: 0, approved: 0, rejected: 0, total: 0 });
     setStats(newStats);
+  };
+
+  // Handle stat card clicks to filter data
+  const handleStatCardClick = (status) => {
+    setFilter(prevFilter => ({ 
+      ...prevFilter, 
+      status: status === 'total' ? 'all' : status 
+    }));
   };
 
   // Handle approve/reject actions
@@ -431,30 +459,46 @@ const AdminApprovalDashboard = () => {
           </div>
         </div>
 
-        {/* Stats */}
+        {/* Stats - Now clickable */}
         <div className="mentorresources-stats-grid">
-          <div className="mentorresources-stat-card">
+          <div 
+            className={`mentorresources-stat-card ${filter.status === 'all' ? 'active' : ''}`}
+            onClick={() => handleStatCardClick('total')}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="mentorresources-stat-content">
               <span className="mentorresources-stat-label">Total</span>
               <span className="mentorresources-stat-icon mentorresources-stat-icon-blue"><FileText /></span>
             </div>
             <div className="mentorresources-stat-value mentorresources-stat-value-blue">{stats.total}</div>
           </div>
-          <div className="mentorresources-stat-card">
+          <div 
+            className={`mentorresources-stat-card ${filter.status === 'pending' ? 'active' : ''}`}
+            onClick={() => handleStatCardClick('pending')}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="mentorresources-stat-content">
               <span className="mentorresources-stat-label">Pending</span>
               <span className="mentorresources-stat-icon mentorresources-stat-icon-yellow"><Clock /></span>
             </div>
             <div className="mentorresources-stat-value mentorresources-stat-value-yellow">{stats.pending}</div>
           </div>
-          <div className="mentorresources-stat-card">
+          <div 
+            className={`mentorresources-stat-card ${filter.status === 'approved' ? 'active' : ''}`}
+            onClick={() => handleStatCardClick('approved')}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="mentorresources-stat-content">
               <span className="mentorresources-stat-label">Approved</span>
               <span className="mentorresources-stat-icon mentorresources-stat-icon-green"><CheckCircle /></span>
             </div>
             <div className="mentorresources-stat-value mentorresources-stat-value-green">{stats.approved}</div>
           </div>
-          <div className="mentorresources-stat-card">
+          <div 
+            className={`mentorresources-stat-card ${filter.status === 'rejected' ? 'active' : ''}`}
+            onClick={() => handleStatCardClick('rejected')}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="mentorresources-stat-content">
               <span className="mentorresources-stat-label">Rejected</span>
               <span className="mentorresources-stat-icon mentorresources-stat-icon-red"><XCircle /></span>

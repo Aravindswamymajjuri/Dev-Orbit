@@ -10,7 +10,7 @@ const CalendarUser = () => {
   const [events, setEvents] = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [event, setEvent] = useState({ title: '', description: '' });
+  const [currentEventIndex, setCurrentEventIndex] = useState(0); // Track current event in modal
   const [errorMessage, setErrorMessage] = useState('');
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 426);
   const [viewMode, setViewMode] = useState('month'); // 'month', 'year', or 'years'
@@ -46,14 +46,22 @@ const CalendarUser = () => {
           }
         });
 
+        // Group events by date - now supporting multiple events per date
         const fetchedEvents = filteredEvents.reduce((acc, event) => {
           const eventDate = new Date(event.date).toLocaleDateString('en-GB');
-          acc[eventDate] = {
+          
+          if (!acc[eventDate]) {
+            acc[eventDate] = [];
+          }
+          
+          acc[eventDate].push({
             title: event.title,
             description: event.description,
             meeting: event.meeting || '',
-            recipients: event.recipients
-          };
+            recipients: event.recipients,
+            id: event.id || event._id // Include event ID for deletion
+          });
+          
           return acc;
         }, {});
 
@@ -78,20 +86,45 @@ const CalendarUser = () => {
   const handleClose = () => {
     setShowModal(false);
     setSelectedDate(null);
+    setCurrentEventIndex(0);
   };
 
   const handleDateClick = (day) => {
     const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
     const formattedDate = date.toLocaleDateString('en-GB');
 
-    if (events[formattedDate]) {
+    if (events[formattedDate] && events[formattedDate].length > 0) {
       setSelectedDate(date);
-      setEvent(events[formattedDate]);
+      setCurrentEventIndex(0); // Start with the first event
       setShowModal(true);
     } else {
-      setSelectedDate(null); // Ensure selectedDate is cleared for non-event days
-      setEvent({ title: '', description: '' });
-      setShowModal(false); // Ensure modal is not shown for non-event days
+      setSelectedDate(null);
+      setCurrentEventIndex(0);
+      setShowModal(false);
+    }
+  };
+
+  // Navigate to previous event on the same date
+  const handlePrevEvent = () => {
+    const formattedDate = selectedDate.toLocaleDateString('en-GB');
+    const dateEvents = events[formattedDate];
+    
+    if (dateEvents && dateEvents.length > 1) {
+      setCurrentEventIndex(prev => 
+        prev === 0 ? dateEvents.length - 1 : prev - 1
+      );
+    }
+  };
+
+  // Navigate to next event on the same date
+  const handleNextEvent = () => {
+    const formattedDate = selectedDate.toLocaleDateString('en-GB');
+    const dateEvents = events[formattedDate];
+    
+    if (dateEvents && dateEvents.length > 1) {
+      setCurrentEventIndex(prev => 
+        prev === dateEvents.length - 1 ? 0 : prev + 1
+      );
     }
   };
 
@@ -145,18 +178,39 @@ const CalendarUser = () => {
   const handleDelete = async () => {
     if (selectedDate) {
       const formattedDate = selectedDate.toLocaleDateString('en-GB');
+      const dateEvents = events[formattedDate];
+      const currentEvent = dateEvents[currentEventIndex];
 
       try {
         const token = localStorage.getItem('token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-        await axios.delete(`${config.backendUrl}/api/events/${formattedDate}`, {
+        // Delete specific event by ID if available
+        await axios.delete(`${config.backendUrl}/api/events/${currentEvent.id || formattedDate}`, {
           headers
         });
+        
         const updatedEvents = { ...events };
-        delete updatedEvents[formattedDate];
+        
+        // Remove the specific event from the date's events array
+        updatedEvents[formattedDate] = dateEvents.filter((_, index) => index !== currentEventIndex);
+        
+        // If no events left for this date, remove the date entry
+        if (updatedEvents[formattedDate].length === 0) {
+          delete updatedEvents[formattedDate];
+        }
+        
         setEvents(updatedEvents);
-        handleClose();
+        
+        // If there are still events for this date, adjust current index
+        if (updatedEvents[formattedDate] && updatedEvents[formattedDate].length > 0) {
+          const newIndex = currentEventIndex >= updatedEvents[formattedDate].length 
+            ? updatedEvents[formattedDate].length - 1 
+            : currentEventIndex;
+          setCurrentEventIndex(newIndex);
+        } else {
+          handleClose();
+        }
       } catch (error) {
         console.error('Error deleting event:', error);
         setErrorMessage('Failed to delete the event. Please try again later.');
@@ -179,12 +233,8 @@ const CalendarUser = () => {
     for (let day = 1; day <= totalDays; day++) {
       const date = new Date(year, month, day);
       const formattedDate = date.toLocaleDateString('en-GB');
-      const eventData = events[formattedDate];
-      // If you support multiple events per day, eventData should be an array
-      // For now, if it's an object, count as 1 if exists
-      const notificationCount = eventData
-        ? (Array.isArray(eventData) ? eventData.length : 1)
-        : 0;
+      const dateEvents = events[formattedDate];
+      const notificationCount = dateEvents ? dateEvents.length : 0;
       const hasEvent = notificationCount > 0;
       const isToday =
         today.getFullYear() === year &&
@@ -201,7 +251,7 @@ const CalendarUser = () => {
           style={{ position: 'relative' }}
         >
           {day}
-          {/* Notification badge at the top-right of the day */}
+          {/* Notification badge showing number of events */}
           {notificationCount > 1 && (
             <span
               style={{
@@ -327,22 +377,24 @@ const CalendarUser = () => {
 
   const daysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
 
+  // Get current event data for the modal
+  const getCurrentEvent = () => {
+    if (!selectedDate) return null;
+    const formattedDate = selectedDate.toLocaleDateString('en-GB');
+    const dateEvents = events[formattedDate];
+    return dateEvents && dateEvents[currentEventIndex] ? dateEvents[currentEventIndex] : null;
+  };
+
+  const getCurrentDateEvents = () => {
+    if (!selectedDate) return [];
+    const formattedDate = selectedDate.toLocaleDateString('en-GB');
+    return events[formattedDate] || [];
+  };
+
   return (
     <div className='usercld-calendar-leader'>
       <div className='usercld-wrapper'>
         <div className="usercld-container">
-          {/* Display current user role for debugging
-          {userRole && (
-            <div className="usercld-role-indicator" style={{ 
-              fontSize: '12px', 
-              color: '#666', 
-              marginBottom: '10px',
-              textAlign: 'center'
-            }}>
-              Viewing as: {userRole.charAt(0).toUpperCase() + userRole.slice(1)}
-            </div>
-          )} */}
-          
           <div className="usercld-header">
             <button 
               onClick={
@@ -409,7 +461,7 @@ const CalendarUser = () => {
             </div>
           )}
 
-          {showModal && (
+          {showModal && getCurrentEvent() && (
             <div className="usercld-modal" onClick={handleClose}>
               <div className="usercld-modal-content" onClick={(e) => e.stopPropagation()}>
                 {!isMobile && (
@@ -420,31 +472,83 @@ const CalendarUser = () => {
                     close
                   </button>
                 )}
-                <h3 className="usercld-modal-title">
-                  Event for {selectedDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
-                </h3>
-                <h4 className="usercld-modal-subtitle">{event.title}</h4>
-                <p className="usercld-modal-description">{event.description}</p>
+                
+                {/* Event navigation header */}
+                <div className="usercld-modal-header" style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '15px',
+                  paddingBottom: '10px',
+                  borderBottom: '1px solid #eee'
+                }}>
+                  <h3 className="usercld-modal-title" style={{ margin: 0, flex: 1 }}>
+                    Event for {selectedDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+                  </h3>
+                  
+                  
+                </div>
+
+                <h4 className="usercld-modal-subtitle">{getCurrentEvent().title}</h4>
+                <p className="usercld-modal-description">{getCurrentEvent().description}</p>
                 
                 {/* Show meeting info if available */}
-                {event.meeting && (
+                {getCurrentEvent().meeting && (
                   <div className="usercld-modal-meeting">
-                    <strong>Meeting: </strong><a href={event.meeting}>{event.meeting}</a>
+                    <strong>Meeting: </strong><a href={getCurrentEvent().meeting} target="_blank" rel="noopener noreferrer">{getCurrentEvent().meeting}</a>
                   </div>
                 )}
+                {/* Event counter and navigation */}
+                  {getCurrentDateEvents().length > 1 && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      fontSize: '14px',
+                      color: '#666',
+                      marginTop: '10px'
+                    }}>
+                      <button 
+                        onClick={handlePrevEvent}
+                        className="usercld-button"
+                        style={{
+                          padding: '5px 8px',
+                          fontSize: '12px',
+                          minWidth: 'auto'
+                        }}
+                      >
+                        <IoIosArrowBack />
+                      </button>
+                      
+                      <span style={{ minWidth: '50px', textAlign: 'center' }}>
+                        {currentEventIndex + 1} of {getCurrentDateEvents().length}
+                      </span>
+                      
+                      <button 
+                        onClick={handleNextEvent}
+                        className="usercld-button"
+                        style={{
+                          padding: '5px 8px',
+                          fontSize: '12px',
+                          minWidth: 'auto'
+                        }}
+                      >
+                        <IoIosArrowForward />
+                      </button>
+                    </div>
+                  )}
                 
                 {/* Show event recipients for admins */}
-                {userRole === 'admin' && event.recipients && (
+                {userRole === 'admin' && getCurrentEvent().recipients && (
                   <div className="usercld-modal-recipients" style={{ 
                     fontSize: '12px', 
                     color: '#666', 
                     marginTop: '10px' 
                   }}>
-                    Target: {event.recipients}
+                    Target: {getCurrentEvent().recipients}
                   </div>
                 )}
               
-                
                 {isMobile && (
                   <button onClick={handleClose} className="usercld-close-button-bottom">
                     Close

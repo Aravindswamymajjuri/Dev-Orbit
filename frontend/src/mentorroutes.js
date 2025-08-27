@@ -22,7 +22,7 @@ import MentorDashboard from './mentor/mentorresouces/mentorresources';
 function Mentor() {
   return (
     <>
-      {/* <MentorHeader /> */}
+      <MentorHeader />
       <Routes>
         {/* <Route path="/" element={<Teams />} /> */}
         <Route path="/" element={<Calender />} />
