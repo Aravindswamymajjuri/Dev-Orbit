@@ -30,11 +30,20 @@ const SignupPage = () => {
     password: '', confirmPassword: ''
   });
 
+  // Coordinator Form State
+  const [coordinatorFormData, setCoordinatorFormData] = useState({
+    name: '', email: '', phoneNumber: '', college: '',
+    github: '', linkedin: '',
+    password: '', confirmPassword: '',
+    year: null // always null, not shown in UI
+  });
+
   // Current step states
   const [studentStep, setStudentStep] = useState(1);
   const [mentorStep, setMentorStep] = useState(1);
+  const [coordinatorStep, setCoordinatorStep] = useState(1);
 
-  // Current Year options
+  // Current Year options for students
   const currentYearOptions = [
     { value: 'first year', label: 'First Year' },
     { value: 'second year', label: 'Second Year' },
@@ -135,6 +144,28 @@ const SignupPage = () => {
     }
   };
 
+  // Coordinator form handlers
+  const handleCoordinatorInputChange = (e) => {
+    const { name, value } = e.target;
+    setCoordinatorFormData({ ...coordinatorFormData, [name]: value });
+    validateField(name, value, coordinatorFormData);
+  };
+
+  const isCoordinatorStepComplete = (step) => {
+    switch (step) {
+      case 1:
+        return coordinatorFormData.name && coordinatorFormData.email && coordinatorFormData.phoneNumber &&
+               coordinatorFormData.college && !errors.name && !errors.email && !errors.phoneNumber && !errors.college;
+      case 2:
+        return coordinatorFormData.github && coordinatorFormData.linkedin && !errors.github && !errors.linkedin;
+      case 3:
+        return coordinatorFormData.password && coordinatorFormData.confirmPassword &&
+               coordinatorFormData.password === coordinatorFormData.confirmPassword && !errors.password && !errors.confirmPassword;
+      default:
+        return false;
+    }
+  };
+
   // Submit handlers
   const handleStudentSubmit = async (e) => {
     e.preventDefault();
@@ -176,8 +207,6 @@ const SignupPage = () => {
           password: mentorFormData.password
         };
   
-
-        
         console.log("Mentor Signup Payload:", mentorPayload);
         
         const response = await fetch(`${config.backendUrl}/roles/mentor/signup`, {
@@ -215,6 +244,61 @@ const SignupPage = () => {
       } catch (error) {
         toast.error('Error during registration: ' + (error.message || 'Please try again later'));
         console.error('Mentor registration error:', error);
+      }
+    }
+  };
+
+  const handleCoordinatorSubmit = async (e) => {
+    e.preventDefault();
+    if (coordinatorStep === 3) {
+      try {
+        // Show loading toast
+        const loadingToast = toast.loading("Submitting registration...");
+        
+        // Prepare the payload (year is always null)
+        const coordinatorPayload = {
+          name: coordinatorFormData.name,
+          email: coordinatorFormData.email,
+          phoneNumber: coordinatorFormData.phoneNumber,
+          college: coordinatorFormData.college,
+          year: null,
+          github: coordinatorFormData.github,
+          linkedin: coordinatorFormData.linkedin,
+          password: coordinatorFormData.password
+        };
+
+        console.log("Coordinator Signup Payload:", coordinatorPayload);
+        
+        const response = await fetch(`${config.backendUrl}/roles/coordinator/signup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(coordinatorPayload)
+        });
+  
+        // Dismiss loading toast
+        toast.dismiss(loadingToast);
+  
+        if (response.ok) {
+          const data = await response.json();
+          toast.success(data.message || 'Coordinator registration successful!');
+          setTimeout(() => {
+            navigate('/login');
+          }, 2000);
+        } else {
+          const errorData = await response.json();
+          let errorMessage = errorData.error || 'Registration failed';
+          if (errorMessage.includes('duplicate key error')) {
+            if (errorMessage.includes('email')) {
+              errorMessage = 'This email is already registered';
+            } else if (errorMessage.includes('phoneNumber')) {
+              errorMessage = 'This phone number is already registered';
+            }
+          }
+          toast.error(errorMessage);
+        }
+      } catch (error) {
+        toast.error('Error during registration: ' + (error.message || 'Please try again later'));
+        console.error('Coordinator registration error:', error);
       }
     }
   };
@@ -524,6 +608,132 @@ const SignupPage = () => {
     }
   };
 
+  const renderCoordinatorForm = () => {
+    switch (coordinatorStep) {
+      case 1:
+        return (
+          <div className="form-group">
+            <label className="signup-label">Personal Information</label>
+            <input
+              className="signup-input-field"
+              name="name"
+              placeholder="Full Name"
+              value={coordinatorFormData.name}
+              onChange={handleCoordinatorInputChange}
+              required
+            />
+            {errors.name && <span className="error">{errors.name}</span>}
+            <input
+              className="signup-input-field"
+              name="email"
+              type="email"
+              placeholder="Email Address"
+              value={coordinatorFormData.email}
+              onChange={handleCoordinatorInputChange}
+              required
+            />
+            {errors.email && <span className="error">{errors.email}</span>}
+            <input
+              className="signup-input-field"
+              name="phoneNumber"
+              placeholder="Phone Number"
+              value={coordinatorFormData.phoneNumber}
+              onChange={handleCoordinatorInputChange}
+              required
+              pattern="^\d{10}$"
+              title="Please enter a valid 10-digit phone number"
+            />
+            {errors.phoneNumber && <span className="error">{errors.phoneNumber}</span>}
+            <input
+              className="signup-input-field"
+              name="college"
+              placeholder="College"
+              value={coordinatorFormData.college}
+              onChange={handleCoordinatorInputChange}
+              required
+            />
+            {errors.college && <span className="error">{errors.college}</span>}
+          </div>
+        );
+      case 2:
+        return (
+          <div className="form-group">
+            <label className="signup-label">Social Media Profiles</label>
+            <input
+              className="signup-input-field"
+              name="github"
+              placeholder="GitHub Profile URL"
+              value={coordinatorFormData.github}
+              onChange={handleCoordinatorInputChange}
+              required
+              pattern="https?://.+"
+              title="Please enter a valid URL"
+            />
+            {errors.github && <span className="error">{errors.github}</span>}
+            <input
+              className="signup-input-field"
+              name="linkedin"
+              placeholder="LinkedIn Profile URL"
+              value={coordinatorFormData.linkedin}
+              onChange={handleCoordinatorInputChange}
+              required
+              pattern="https?://.+"
+              title="Please enter a valid URL"
+            />
+            {errors.linkedin && <span className="error">{errors.linkedin}</span>}
+          </div>
+        );
+      case 3:
+        return (
+          <div className="form-group">
+            <label className="signup-label">Password</label>
+            <div className="password-container">
+              <input
+                className="signup-input-field"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Password"
+                value={coordinatorFormData.password}
+                onChange={handleCoordinatorInputChange}
+                required
+                minLength="8"
+                title="Password must be at least 8 characters long"
+              />
+              <span
+                className="password-toggle-icon"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <FaEyeSlash /> : <FaEye />}
+              </span>
+            </div>
+            {errors.password && <span className="error">{errors.password}</span>}
+            <div className="password-container">
+              <input
+                className="signup-input-field"
+                name="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                placeholder="Confirm Password"
+                value={coordinatorFormData.confirmPassword}
+                onChange={handleCoordinatorInputChange}
+                required
+                minLength="8"
+                title="Password must be at least 8 characters long"
+              />
+              <span
+                className="password-toggle-icon"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              >
+                {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
+              </span>
+            </div>
+            {errors.confirmPassword && <span className="error">{errors.confirmPassword}</span>}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   const renderButtons = () => (
     <div className="buttons-card">
       <h2 className="signup-title">Choose Your Role</h2>
@@ -538,6 +748,12 @@ const SignupPage = () => {
         onClick={() => handleRoleSelect('mentor')}
       >
         Register as Mentor
+      </button>
+      <button 
+        className="role-button coordinator-btn"
+        onClick={() => handleRoleSelect('coordinator')}
+      >
+        Register as Coordinator
       </button>
       <div className='signup-matter-div'>
       <p className='signup-matter'> Already Register? <Link to={"/login"}>Login</Link> </p>
@@ -619,6 +835,41 @@ const SignupPage = () => {
               </form>
             </div>
           </>
+        ) : selectedRole === 'coordinator' ? (
+          <>
+            <div className={`card-container ${isAnimating ? 'slide-out' : ''}`}>
+              {renderButtons()}
+            </div>
+            <div className={`signup-card ${isAnimating ? 'slide-in' : ''}`}>
+              <h2 className="signup-title">Coordinator Registration</h2>
+              <div className="progress-bar">
+                {renderStepIndicator(coordinatorStep, 3, isCoordinatorStepComplete)}
+              </div>
+              <form onSubmit={handleCoordinatorSubmit}>
+                {renderCoordinatorForm()}
+                <div className="button-groupsss">
+                  <button
+                    type="button"
+                    onClick={() => setCoordinatorStep((curr) => curr - 1)}
+                    disabled={coordinatorStep === 1}
+                    className="btn btn-prev"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type={coordinatorStep === 3 ? 'submit' : 'button'}
+                    onClick={() =>
+                      coordinatorStep < 3 && setCoordinatorStep((curr) => curr + 1)
+                    }
+                    disabled={!isCoordinatorStepComplete(coordinatorStep)}
+                    className="btn btn-next"
+                  >
+                    {coordinatorStep === 3 ? 'Submit' : 'Next'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </>
         ) : (
           <div className={`card-container ${isAnimating ? 'slide-in' : ''}`}>
             {renderButtons()}
@@ -629,4 +880,4 @@ const SignupPage = () => {
   );
 };
 
-export default SignupPage;
+export default SignupPage;c

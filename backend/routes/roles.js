@@ -6,8 +6,9 @@ const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 // Import Models
-const { Student, Mentor, Admin } = require('../models/roles');
+const { Student, Mentor, Coordinator, Admin } = require('../models/roles');
 
+// Fix: use createTransport, not createTransporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -16,7 +17,9 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Signup Routes
+// ==================== SIGNUP ROUTES ====================
+
+// Student Signup Route
 router.post('/student/signup', async (req, res) => {
   try {
     const { 
@@ -33,7 +36,6 @@ router.post('/student/signup', async (req, res) => {
       linkedin 
     } = req.body;
     
-    // Log the incoming request body
     console.log("Student Signup Request Body:", req.body);
     
     // Validation for required fields
@@ -48,29 +50,6 @@ router.post('/student/signup', async (req, res) => {
     if (!validCurrentYears.includes(currentYear)) {
       return res.status(400).json({ 
         error: 'Invalid current year selection' 
-      });
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ 
-        error: 'Invalid email format' 
-      });
-    }
-
-    // Validate phone number format (10 digits)
-    const phoneRegex = /^\d{10}$/;
-    if (!phoneRegex.test(phoneNumber)) {
-      return res.status(400).json({ 
-        error: 'Phone number must be exactly 10 digits' 
-      });
-    }
-
-    // Validate password length
-    if (password.length < 8) {
-      return res.status(400).json({ 
-        error: 'Password must be at least 8 characters long' 
       });
     }
 
@@ -173,8 +152,32 @@ router.post('/mentor/signup', async (req, res) => {
   try {
     const {name, email, phoneNumber, password, github, linkedin} = req.body;
 
-    // Log the incoming request body
     console.log("Mentor Signup Request Body:", req.body);
+
+    // Validation for required fields
+    if (!name || !email || !phoneNumber || !password || !github || !linkedin) {
+      return res.status(400).json({ 
+        error: 'All required fields must be provided' 
+      });
+    }
+
+    // Check if mentor already exists
+    const existingMentor = await Mentor.findOne({
+      $or: [
+        { email: email },
+        { phoneNumber: phoneNumber }
+      ]
+    });
+
+    if (existingMentor) {
+      let errorMessage = 'Mentor already exists with this ';
+      if (existingMentor.email === email) {
+        errorMessage += 'email address';
+      } else if (existingMentor.phoneNumber === phoneNumber) {
+        errorMessage += 'phone number';
+      }
+      return res.status(409).json({ error: errorMessage });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -185,20 +188,120 @@ router.post('/mentor/signup', async (req, res) => {
       password: hashedPassword,
       github,
       linkedin,
-      status: 'pending' // Set default status to pending
+      status: 'pending'
     });
 
     await mentor.save();
     
-    // Optionally notify admin about new pending mentor
-    // await notifyAdminAboutPendingMentor(mentor);
-    
     res.status(201).json({
       message: 'Mentor registration submitted successfully. Your account is pending approval by an administrator.',
-      mentor: mentor._id
+      mentorId: mentor._id
     });
   } catch(error) {
     console.error("Mentor Signup Error:", error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed: ' + validationErrors.join(', ') 
+      });
+    }
+    
+    res.status(500).json({error: error.message});
+  }
+});
+
+// Coordinator Signup Route
+router.post('/coordinator/signup', async (req, res) => {
+  try {
+    const { name, email, phoneNumber, college, year, github, linkedin, password } = req.body;
+
+    console.log("Coordinator Signup Request Body:", req.body);
+
+    // Validation for required fields
+    if (!name || !email || !phoneNumber || !college || !github || !linkedin || !password) {
+      return res.status(400).json({ 
+        error: 'All required fields must be provided' 
+      });
+    }
+
+    // No year validation, year can be null
+
+    // Check if coordinator already exists
+    const existingCoordinator = await Coordinator.findOne({
+      $or: [
+        { email: email },
+        { phoneNumber: phoneNumber }
+      ]
+    });
+
+    if (existingCoordinator) {
+      let errorMessage = 'Coordinator already exists with this ';
+      if (existingCoordinator.email === email) {
+        errorMessage += 'email address';
+      } else if (existingCoordinator.phoneNumber === phoneNumber) {
+        errorMessage += 'phone number';
+      }
+      return res.status(409).json({ error: errorMessage });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const coordinator = new Coordinator({
+      name,
+      email,
+      phoneNumber,
+      college,
+      year: null,
+      github,
+      linkedin,
+      password: hashedPassword
+    });
+
+    await coordinator.save();
+    
+    console.log("Coordinator registered successfully:", {
+      id: coordinator._id,
+      name: coordinator.name,
+      email: coordinator.email,
+      year: coordinator.year
+    });
+    
+    res.status(201).json({
+      message: 'Coordinator registered successfully',
+      coordinatorId: coordinator._id
+    });
+  } catch(error) {
+    console.error("Coordinator Signup Error:", error);
+    
+    // Handle MongoDB duplicate key errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      let errorMessage = '';
+      
+      switch (field) {
+        case 'email':
+          errorMessage = 'This email address is already registered';
+          break;
+        case 'phoneNumber':
+          errorMessage = 'This phone number is already registered';
+          break;
+        default:
+          errorMessage = 'A coordinator with this information already exists';
+      }
+      
+      return res.status(409).json({ error: errorMessage });
+    }
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed: ' + validationErrors.join(', ') 
+      });
+    }
+    
     res.status(500).json({error: error.message});
   }
 });
@@ -206,43 +309,85 @@ router.post('/mentor/signup', async (req, res) => {
 // Admin Signup Route
 router.post('/admin/signup', async (req,res) => {
  try {
-   const {name,email,phoneNumber,password} = req.body;
+   const {name, email, phoneNumber, password} = req.body;
 
-   const hashedPassword=await bcrypt.hash(password ,10);
+   // Validation for required fields
+   if (!name || !email || !phoneNumber || !password) {
+     return res.status(400).json({ 
+       error: 'All required fields must be provided' 
+     });
+   }
 
-   const admin=new Admin({
+   // Check if admin already exists
+   const existingAdmin = await Admin.findOne({
+     $or: [
+       { email: email },
+       { phoneNumber: phoneNumber }
+     ]
+   });
+
+   if (existingAdmin) {
+     let errorMessage = 'Admin already exists with this ';
+     if (existingAdmin.email === email) {
+       errorMessage += 'email address';
+     } else if (existingAdmin.phoneNumber === phoneNumber) {
+       errorMessage += 'phone number';
+     }
+     return res.status(409).json({ error: errorMessage });
+   }
+
+   const hashedPassword = await bcrypt.hash(password, 10);
+
+   const admin = new Admin({
      name,
      email,
      phoneNumber,
-     password : hashedPassword
+     password: hashedPassword
    });
 
    await admin.save();
    res.status(201).json({message:'Admin registered successfully'});
  } catch(error){
+   console.error("Admin Signup Error:", error);
+   
+   // Handle validation errors
+   if (error.name === 'ValidationError') {
+     const validationErrors = Object.values(error.errors).map(err => err.message);
+     return res.status(400).json({ 
+       error: 'Validation failed: ' + validationErrors.join(', ') 
+     });
+   }
+   
    res.status(500).json({error:error.message});
  }
 });
 
-// Login Routes
+// ==================== LOGIN ROUTES ====================
+
+// Student Login Route
 router.post('/student/login', async (req,res) => {
  try {
-   const {email,password} = req.body;
+   const {email, password} = req.body;
 
-   const student=await Student.findOne({email});
+   if (!email || !password) {
+     return res.status(400).json({message: 'Email and password are required'});
+   }
+
+   const student = await Student.findOne({email});
    if(!student){
      return res.status(401).json({message:'Invalid email or password'});
    }
 
-   const isValidPassword=await bcrypt.compare(password ,student.password);
+   const isValidPassword = await bcrypt.compare(password, student.password);
    if(!isValidPassword){
      return res.status(401).json({message:'Invalid email or password'});
    }
 
-   const token=jwt.sign({userId : student._id , role : 'student'}, 'your-secret-key',{expiresIn:'1h'});
-   res.json({token,student:student._id,studentyear:student.currentYear});
+   const token = jwt.sign({userId: student._id, role: 'student'}, 'your-secret-key', {expiresIn:'1h'});
+   res.json({token, student: student._id, studentyear: student.currentYear, role: 'student'});
  } catch(error){
-   res.status(500).json({error:error.message});
+   console.error("Student Login Error:", error);
+   res.status(500).json({error: error.message});
  }
 });
 
@@ -251,45 +396,80 @@ router.post('/mentor/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find the mentor by email
+    if (!email || !password) {
+      return res.status(400).json({message: 'Email and password are required'});
+    }
+
     const mentor = await Mentor.findOne({ email });
 
-    // Check if the mentor exists
     if (!mentor) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    // Check if the mentor's status is approved
     if (mentor.status !== 'approved') {
       return res.status(403).json({ message: 'Your account is not approved yet. Please wait for approval from the administrator.' });
     }
 
-    // Compare the password
     const isValidPassword = await bcrypt.compare(password, mentor.password);
     if (!isValidPassword) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    // Create the JWT token
     const token = jwt.sign(
       { userId: mentor._id, role: 'mentor' },
       'your-secret-key',
       { expiresIn: '1h' }
     );
 
-    // Send the token in response
-    res.json({ token,role: 'mentor', mentor: mentor._id });
+    res.json({ token, role: 'mentor', mentor: mentor._id });
   } catch (error) {
     console.error("Mentor Login Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// Coordinator Login Route
+router.post('/coordinator/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({message: 'Email and password are required'});
+    }
+
+    const coordinator = await Coordinator.findOne({ email });
+
+    if (!coordinator) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    const isValidPassword = await bcrypt.compare(password, coordinator.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    const token = jwt.sign(
+      { userId: coordinator._id, role: 'coordinator' },
+      'your-secret-key',
+      { expiresIn: '1h' }
+    );
+
+    res.json({ token, role: 'coordinator', coordinator: coordinator._id, coordinatorYear: coordinator.year });
+  } catch (error) {
+    console.error("Coordinator Login Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Admin Login Route
-// Step 1: Verify credentials and send OTP
 router.post('/admin/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({message: 'Email and password are required'});
+    }
+
     const admin = await Admin.findOne({ email });
     
     if (!admin || !(await bcrypt.compare(password, admin.password))) {
@@ -320,10 +500,15 @@ router.post('/admin/login', async (req, res) => {
   }
 });
 
-// Step 2: Verify OTP and complete login
+// Admin OTP Verification Route
 router.post('/admin/verify-otp', async (req, res) => {
   try {
     const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({message: 'Email and OTP are required'});
+    }
+
     const admin = await Admin.findOne({ email });
 
     if (!admin) {
@@ -347,58 +532,413 @@ router.post('/admin/verify-otp', async (req, res) => {
     admin.otpExpiry = null;
     await admin.save();
 
-    res.json({ token, admin: admin._id.toString() });
+    res.json({ token, admin: admin._id.toString(), role: 'admin' });
   } catch (error) {
     console.error("OTP Verification Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Change password with old password
-router.post('/admin/reset-password', async (req, res) => {
+// ==================== PASSWORD RESET ROUTES ====================
+
+// Student Password Reset Routes
+router.post('/student/reset-password', async (req, res) => {
   try {
-    console.log("Request Body:", req.body);
     const { email, oldPassword, newPassword } = req.body;
 
     if (!email || !oldPassword || !newPassword) {
-      console.log("Missing input fields");
       return res.status(400).json({ message: "Missing input fields" });
     }
 
-    // Find the user by email
-    const admin = await Admin.findOne({ email }); 
-    if (!admin) {
-      console.log("Admin not found");
-      return res.status(404).json({ message: "Admin not found" });
+    const user = await Student.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // Check if old password is correct
-    const isValidPassword = await bcrypt.compare(oldPassword, admin.password);
+    const isValidPassword = await bcrypt.compare(oldPassword, user.password);
     if (!isValidPassword) {
-      console.log("Invalid old password");
       return res.status(401).json({ message: "Invalid old password" });
     }
 
-    // Hash and save the new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    admin.password = hashedPassword;
-    await admin.save();
+    user.password = hashedPassword;
+    await user.save();
 
-    console.log("Password updated successfully");
     res.json({ message: "Password updated successfully" });
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Student Password Reset Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Reset password with OTP
-// Reset password with OTP - Fixed version
+router.post('/student/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await Student.findOne({ email });
+    
+    if (!user) {
+      return res.status(404).json({ message: "Email not found!" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = new Date(Date.now() + 600000); // 10 minutes expiry
+    
+    user.otp = otp;
+    user.otpExpiry = otpExpiry;
+    await user.save();
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL,
+      to: email,
+      subject: 'Password Reset OTP',
+      text: `Your OTP for password reset is: ${otp}`
+    });
+    res.json({ message: "OTP sent to your email!" });
+  } catch (error) {
+    console.error("Student Forgot Password Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/student/validate-otp', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
+    }
+
+    const user = await Student.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (!user.otp || user.otp !== otp || Date.now() > user.otpExpiry) {
+      return res.status(401).json({ message: 'Invalid or expired OTP' });
+    }
+
+    res.json({ message: 'OTP validated successfully!' });
+  } catch (error) {
+    console.error("Student OTP Validation Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/student/reset-forgot-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({ message: "Email and new password are required" });
+    }
+
+    const user = await Student.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (!user.otp || !user.otpExpiry || Date.now() > user.otpExpiry) {
+      return res.status(401).json({ message: "OTP validation required or expired" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.otp = null;
+    user.otpExpiry = null;
+    
+    await user.save();
+
+    res.json({ message: "Password reset successfully!" });
+  } catch (error) {
+    console.error("Student Reset Forgot Password Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mentor Password Reset Routes
+router.post('/mentor/reset-password', async (req, res) => {
+  try {
+    const { email, oldPassword, newPassword } = req.body;
+
+    if (!email || !oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Missing input fields" });
+    }
+
+    const mentor = await Mentor.findOne({ email });
+    if (!mentor) {
+      return res.status(404).json({ message: "Mentor not found" });
+    }
+
+    const isValidPassword = await bcrypt.compare(oldPassword, mentor.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ message: "Invalid old password" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    mentor.password = hashedPassword;
+    await mentor.save();
+
+    res.json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Mentor Password Reset Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/mentor/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const mentor = await Mentor.findOne({ email });
+    
+    if (!mentor) {
+      return res.status(404).json({ message: "Email not found!" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = new Date(Date.now() + 600000);
+    
+    mentor.otp = otp;
+    mentor.otpExpiry = otpExpiry;
+    await mentor.save();
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL,
+      to: email,
+      subject: 'Password Reset OTP',
+      text: `Your OTP for password reset is: ${otp}`
+    });
+    res.json({ message: "OTP sent to your email!" });
+  } catch (error) {
+    console.error("Mentor Forgot Password Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/mentor/validate-otp', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
+    }
+
+    const mentor = await Mentor.findOne({ email });
+    if (!mentor) {
+      return res.status(404).json({ message: "Mentor not found" });
+    }
+
+    if (!mentor.otp || mentor.otp !== otp || Date.now() > mentor.otpExpiry) {
+      return res.status(401).json({ message: 'Invalid or expired OTP' });
+    }
+
+    res.json({ message: 'OTP validated successfully!' });
+  } catch (error) {
+    console.error("Mentor OTP Validation Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/mentor/reset-forgot-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({ message: "Email and new password are required" });
+    }
+
+    const mentor = await Mentor.findOne({ email });
+
+    if (!mentor) {
+      return res.status(404).json({ message: "Mentor not found" });
+    }
+
+    if (!mentor.otp || !mentor.otpExpiry || Date.now() > mentor.otpExpiry) {
+      return res.status(401).json({ message: "OTP validation required or expired" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    mentor.password = hashedPassword;
+    mentor.otp = null;
+    mentor.otpExpiry = null;
+    
+    await mentor.save();
+
+    res.json({ message: "Password reset successfully!" });
+  } catch (error) {
+    console.error("Mentor Reset Forgot Password Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Coordinator Password Reset Routes
+router.post('/coordinator/reset-password', async (req, res) => {
+  try {
+    const { email, oldPassword, newPassword } = req.body;
+
+    if (!email || !oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Missing input fields" });
+    }
+
+    const coordinator = await Coordinator.findOne({ email });
+    if (!coordinator) {
+      return res.status(404).json({ message: "Coordinator not found" });
+    }
+
+    const isValidPassword = await bcrypt.compare(oldPassword, coordinator.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ message: "Invalid old password" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    coordinator.password = hashedPassword;
+    await coordinator.save();
+
+    res.json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Coordinator Password Reset Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/coordinator/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const coordinator = await Coordinator.findOne({ email });
+    
+    if (!coordinator) {
+      return res.status(404).json({ message: "Email not found!" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = new Date(Date.now() + 600000);
+    
+    coordinator.otp = otp;
+    coordinator.otpExpiry = otpExpiry;
+    await coordinator.save();
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL,
+      to: email,
+      subject: 'Password Reset OTP',
+      text: `Your OTP for password reset is: ${otp}`
+    });
+    res.json({ message: "OTP sent to your email!" });
+  } catch (error) {
+    console.error("Coordinator Forgot Password Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/coordinator/validate-otp', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
+    }
+
+    const coordinator = await Coordinator.findOne({ email });
+    if (!coordinator) {
+      return res.status(404).json({ message: "Coordinator not found" });
+    }
+
+    if (!coordinator.otp || coordinator.otp !== otp || Date.now() > coordinator.otpExpiry) {
+      return res.status(401).json({ message: 'Invalid or expired OTP' });
+    }
+
+    res.json({ message: 'OTP validated successfully!' });
+  } catch (error) {
+    console.error("Coordinator OTP Validation Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/coordinator/reset-forgot-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({ message: "Email and new password are required" });
+    }
+
+    const coordinator = await Coordinator.findOne({ email });
+
+    if (!coordinator) {
+      return res.status(404).json({ message: "Coordinator not found" });
+    }
+
+    if (!coordinator.otp || !coordinator.otpExpiry || Date.now() > coordinator.otpExpiry) {
+      return res.status(401).json({ message: "OTP validation required or expired" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    coordinator.password = hashedPassword;
+    coordinator.otp = null;
+    coordinator.otpExpiry = null;
+    
+    await coordinator.save();
+
+    res.json({ message: "Password reset successfully!" });
+  } catch (error) {
+    console.error("Coordinator Reset Forgot Password Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin Password Reset Routes
+router.post('/admin/reset-password', async (req, res) => {
+  try {
+    const { email, oldPassword, newPassword } = req.body;
+
+    if (!email || !oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Missing input fields" });
+    }
+
+    const admin = await Admin.findOne({ email }); 
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    const isValidPassword = await bcrypt.compare(oldPassword, admin.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ message: "Invalid old password" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    admin.password = hashedPassword;
+    await admin.save();
+
+    res.json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Admin Password Reset Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post('/admin/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
     
-    // Add some logging to trace execution
     console.log(`Processing forgot password for admin email: ${email}`);
     
     const admin = await Admin.findOne({ email });
@@ -410,17 +950,14 @@ router.post('/admin/forgot-password', async (req, res) => {
 
     console.log(`Found admin: ${admin._id}`);
 
-    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpiry = new Date(Date.now() + 600000); // 10 minutes from now
     
     console.log(`Generated OTP: ${otp} with expiry: ${otpExpiry}`);
     
-    // Store OTP in database - explicitly set the fields
     admin.otp = otp;
     admin.otpExpiry = otpExpiry;
     
-    // Add detailed logging for save operation
     try {
       const savedAdmin = await admin.save();
       console.log(`Admin saved with OTP. Updated document:`, {
@@ -435,7 +972,6 @@ router.post('/admin/forgot-password', async (req, res) => {
       return res.status(500).json({ message: "Failed to save OTP. Database error." });
     }
 
-    // Send OTP via email
     try {
       await transporter.sendMail({
         from: process.env.EMAIL,
@@ -448,7 +984,6 @@ router.post('/admin/forgot-password', async (req, res) => {
       res.json({ message: "OTP sent to your email!" });
     } catch (emailError) {
       console.error("Email sending failed:", emailError);
-      // Revert the OTP save if email fails
       admin.otp = undefined;
       admin.otpExpiry = undefined;
       await admin.save();
@@ -456,7 +991,7 @@ router.post('/admin/forgot-password', async (req, res) => {
       res.status(500).json({ message: "Failed to send OTP email. Please try again later." });
     }
   } catch (error) {
-    console.error("Forgot Password Error:", error);
+    console.error("Admin Forgot Password Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -464,20 +999,24 @@ router.post('/admin/forgot-password', async (req, res) => {
 router.post('/admin/validate-otp', async (req, res) => {
   try {
     const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
+    }
+
     const admin = await Admin.findOne({ email });
     
     if (!admin) {
       return res.status(404).json({ message: 'Admin not found' });
     }
 
-    // Check if OTP is valid and not expired
     if (!admin.otp || admin.otp !== otp || !admin.otpExpiry || new Date() > admin.otpExpiry) {
       return res.status(401).json({ message: 'Invalid or expired OTP' });
     }
 
     res.json({ message: 'OTP validated successfully!' });
   } catch (error) {
-    console.error("OTP Validation Error:", error);
+    console.error("Admin OTP Validation Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -485,22 +1024,23 @@ router.post('/admin/validate-otp', async (req, res) => {
 router.post('/admin/reset-forgot-password', async (req, res) => {
   try {
     const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({ message: "Email and new password are required" });
+    }
+
     const admin = await Admin.findOne({ email });
 
     if (!admin) {
       return res.status(404).json({ message: "Admin not found" });
     }
     
-    // Check if OTP was validated (presence of OTP fields)
     if (!admin.otp || !admin.otpExpiry) {
       return res.status(400).json({ message: "OTP validation required before password reset" });
     }
 
-    // Hash and save the new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     admin.password = hashedPassword;
-    
-    // Clear OTP fields after password reset
     admin.otp = undefined;
     admin.otpExpiry = undefined;
     
@@ -508,234 +1048,179 @@ router.post('/admin/reset-forgot-password', async (req, res) => {
 
     res.json({ message: "Password reset successfully!" });
   } catch (error) {
-    console.error("Password Reset Error:", error);
+    console.error("Admin Reset Forgot Password Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// User Reset Password Routes
-// Student password reset routes
-router.post('/student/reset-password', async (req, res) => {
+// ==================== UTILITY ROUTES ====================
+
+// Get user profile routes
+router.get('/student/profile/:id', async (req, res) => {
   try {
-    console.log("Request Body:", req.body);
-    const { email, oldPassword, newPassword } = req.body;
-
-    if (!email || !oldPassword || !newPassword) {
-      console.log("Missing input fields");
-      return res.status(400).json({ message: "Missing input fields" });
+    const student = await Student.findById(req.params.id).select('-password -otp -otpExpiry');
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
     }
-
-    const user = await Student.findOne({ email });
-    if (!user) {
-      console.log("User not found");
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const isValidPassword = await bcrypt.compare(oldPassword, user.password);
-    if (!isValidPassword) {
-      console.log("Invalid old password");
-      return res.status(401).json({ message: "Invalid old password" });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    await user.save();
-
-    console.log("Password updated successfully");
-    res.json({ message: "Password updated successfully" });
+    res.json(student);
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Get Student Profile Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/student/forgot-password', async (req, res) => {
+router.get('/mentor/profile/:id', async (req, res) => {
   try {
-    const { email } = req.body;
-    const user = await Student.findOne({ email });
-    
-    if (!user) {
-      return res.status(404).json({ message: "Email not found!" });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpiry = new Date(Date.now() + 600000); // 10 minutes expiry
-    
-    // Store OTP in database
-    user.otp = otp;
-    user.otpExpiry = otpExpiry;
-    await user.save();
-    
-    await transporter.sendMail({
-      from: process.env.EMAIL,
-      to: email,
-      subject: 'Password Reset OTP',
-      text: `Your OTP for password reset is: ${otp}`
-    });
-    res.json({ message: "OTP sent to your email!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/student/validate-otp', async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-
-    const user = await Student.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    // Check if OTP exists and is valid
-    if (!user.otp || user.otp !== otp || Date.now() > user.otpExpiry) {
-      return res.status(401).json({ message: 'Invalid or expired OTP' });
-    }
-
-    res.json({ message: 'OTP validated successfully!' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/student/reset-forgot-password', async (req, res) => {
-  try {
-    const { email, newPassword } = req.body;
-    const user = await Student.findOne({ email });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    // Check if OTP was validated
-    if (!user.otp || !user.otpExpiry || Date.now() > user.otpExpiry) {
-      return res.status(401).json({ message: "OTP validation required or expired" });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    
-    // Clear OTP after successful password reset
-    user.otp = null;
-    user.otpExpiry = null;
-    
-    await user.save();
-
-    res.json({ message: "Password reset successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Mentor password reset routes
-router.post('/mentor/reset-password', async (req, res) => {
-  try {
-    console.log("Request Body:", req.body);
-    const { email, oldPassword, newPassword } = req.body;
-
-    if (!email || !oldPassword || !newPassword) {
-      console.log("Missing input fields");
-      return res.status(400).json({ message: "Missing input fields" });
-    }
-
-    const mentor = await Mentor.findOne({ email });
+    const mentor = await Mentor.findById(req.params.id).select('-password -otp -otpExpiry');
     if (!mentor) {
-      console.log("Mentor not found");
-      return res.status(404).json({ message: "Mentor not found" });
+      return res.status(404).json({ message: 'Mentor not found' });
     }
-
-    const isValidPassword = await bcrypt.compare(oldPassword, mentor.password);
-    if (!isValidPassword) {
-      console.log("Invalid old password");
-      return res.status(401).json({ message: "Invalid old password" });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    mentor.password = hashedPassword;
-    await mentor.save();
-
-    console.log("Password updated successfully");
-    res.json({ message: "Password updated successfully" });
+    res.json(mentor);
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Get Mentor Profile Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/mentor/forgot-password', async (req, res) => {
+router.get('/coordinator/profile/:id', async (req, res) => {
   try {
-    const { email } = req.body;
-    const mentor = await Mentor.findOne({ email });
+    const coordinator = await Coordinator.findById(req.params.id).select('-password -otp -otpExpiry');
+    if (!coordinator) {
+      return res.status(404).json({ message: 'Coordinator not found' });
+    }
+    res.json(coordinator);
+  } catch (error) {
+    console.error("Get Coordinator Profile Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/admin/profile/:id', async (req, res) => {
+  try {
+    const admin = await Admin.findById(req.params.id).select('-password -otp -otpExpiry');
+    if (!admin) {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+    res.json(admin);
+  } catch (error) {
+    console.error("Get Admin Profile Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update profile routes (excluding password)
+router.put('/student/profile/:id', async (req, res) => {
+  try {
+    const { password, otp, otpExpiry, ...updateData } = req.body;
+    
+    const student = await Student.findByIdAndUpdate(
+      req.params.id, 
+      updateData, 
+      { new: true, runValidators: true }
+    ).select('-password -otp -otpExpiry');
+    
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+    
+    res.json({ message: 'Profile updated successfully', student });
+  } catch (error) {
+    console.error("Update Student Profile Error:", error);
+    
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed: ' + validationErrors.join(', ') 
+      });
+    }
+    
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/mentor/profile/:id', async (req, res) => {
+  try {
+    const { password, otp, otpExpiry, status, requestDate, approvalDate, rejectionReason, ...updateData } = req.body;
+    
+    const mentor = await Mentor.findByIdAndUpdate(
+      req.params.id, 
+      updateData, 
+      { new: true, runValidators: true }
+    ).select('-password -otp -otpExpiry');
     
     if (!mentor) {
-      return res.status(404).json({ message: "Email not found!" });
+      return res.status(404).json({ message: 'Mentor not found' });
     }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpiry = new Date(Date.now() + 600000); // 10 minutes expiry
     
-    // Store OTP in database
-    mentor.otp = otp;
-    mentor.otpExpiry = otpExpiry;
-    await mentor.save();
-    
-    await transporter.sendMail({
-      from: process.env.EMAIL,
-      to: email,
-      subject: 'Password Reset OTP',
-      text: `Your OTP for password reset is: ${otp}`
-    });
-    res.json({ message: "OTP sent to your email!" });
+    res.json({ message: 'Profile updated successfully', mentor });
   } catch (error) {
+    console.error("Update Mentor Profile Error:", error);
+    
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed: ' + validationErrors.join(', ') 
+      });
+    }
+    
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/mentor/validate-otp', async (req, res) => {
+router.put('/coordinator/profile/:id', async (req, res) => {
   try {
-    const { email, otp } = req.body;
-
-    const mentor = await Mentor.findOne({ email });
-    if (!mentor) {
-      return res.status(404).json({ message: "Mentor not found" });
+    const { password, otp, otpExpiry, ...updateData } = req.body;
+    
+    const coordinator = await Coordinator.findByIdAndUpdate(
+      req.params.id, 
+      updateData, 
+      { new: true, runValidators: true }
+    ).select('-password -otp -otpExpiry');
+    
+    if (!coordinator) {
+      return res.status(404).json({ message: 'Coordinator not found' });
     }
-
-    // Check if OTP exists and is valid
-    if (!mentor.otp || mentor.otp !== otp || Date.now() > mentor.otpExpiry) {
-      return res.status(401).json({ message: 'Invalid or expired OTP' });
-    }
-
-    res.json({ message: 'OTP validated successfully!' });
+    
+    res.json({ message: 'Profile updated successfully', coordinator });
   } catch (error) {
+    console.error("Update Coordinator Profile Error:", error);
+    
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed: ' + validationErrors.join(', ') 
+      });
+    }
+    
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/mentor/reset-forgot-password', async (req, res) => {
+router.put('/admin/profile/:id', async (req, res) => {
   try {
-    const { email, newPassword } = req.body;
-    const mentor = await Mentor.findOne({ email });
-
-    if (!mentor) {
-      return res.status(404).json({ message: "Mentor not found" });
-    }
-
-    // Check if OTP was validated
-    if (!mentor.otp || !mentor.otpExpiry || Date.now() > mentor.otpExpiry) {
-      return res.status(401).json({ message: "OTP validation required or expired" });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    mentor.password = hashedPassword;
+    const { password, otp, otpExpiry, ...updateData } = req.body;
     
-    // Clear OTP after successful password reset
-    mentor.otp = null;
-    mentor.otpExpiry = null;
+    const admin = await Admin.findByIdAndUpdate(
+      req.params.id, 
+      updateData, 
+      { new: true, runValidators: true }
+    ).select('-password -otp -otpExpiry');
     
-    await mentor.save();
-
-    res.json({ message: "Password reset successfully!" });
+    if (!admin) {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+    
+    res.json({ message: 'Profile updated successfully', admin });
   } catch (error) {
+    console.error("Update Admin Profile Error:", error);
+    
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed: ' + validationErrors.join(', ') 
+      });
+    }
+    
     res.status(500).json({ error: error.message });
   }
 });
