@@ -48,7 +48,6 @@ const LoginPage = ({ onNavigate = () => {} }) => {
         if (response.data.student) {
           localStorage.setItem('student', response.data.student.id);
         }
-        
         // Store student current year if available
         if (response.data.student.currentYear) {
           localStorage.setItem('studentYear', response.data.student.currentYear);
@@ -63,6 +62,14 @@ const LoginPage = ({ onNavigate = () => {} }) => {
           console.log('Mentor ID stored in localStorage:', response.data.mentor);
         } else {
           console.log('No mentor ID found in response');
+        }
+      } else if (userRole === 'coordinator') {
+        // Store coordinator ID
+        if (response.data.coordinator) {
+          localStorage.setItem('coordinator', response.data.coordinator);
+          console.log('Coordinator ID stored in localStorage:', response.data.coordinator);
+        } else {
+          console.log('No coordinator ID found in response');
         }
       }
       
@@ -79,7 +86,12 @@ const LoginPage = ({ onNavigate = () => {} }) => {
       });
 
       // Navigate based on role
-      const navigatePath = userRole === 'mentor' ? '/mentor' : '/user';
+      let navigatePath = '/user';
+      if (userRole === 'mentor') {
+        navigatePath = '/mentor';
+      } else if (userRole === 'coordinator') {
+        navigatePath = '/coordinator';
+      }
       setTimeout(() => navigate(navigatePath), 2000);
     }
   } catch (error) {
@@ -125,7 +137,7 @@ const LoginPage = ({ onNavigate = () => {} }) => {
           
           <div className="role-toggle">
             <div className="toggle-switch">
-              {['student', 'mentor'].map(type => (
+              {['student', 'mentor', 'coordinator'].map(type => (
                 <button 
                   key={type}
                   type="button"
